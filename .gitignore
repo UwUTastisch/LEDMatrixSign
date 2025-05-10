@@ -5,3 +5,14 @@
 .vscode/ipch
 scr/old/
 .vscode
+# here u see my old vibe code paths
+include/README
+lib/README
+src/old/main.cpp.matrix.v1
+src/old/main.cpp.matrix.v2
+src/old/main.cpp.matrix.v3
+src/old/main.cpp.old
+src/old/main.cpp.old.v1
+src/old/main.cpp.old.v2
+src/old/main.cpp.old.v3
+test/README
