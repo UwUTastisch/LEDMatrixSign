@@ -117,23 +117,12 @@ This should be mostly compatible with WLED-Config.
 
 1. Copy `config.json` to the root of your SD card.
 2. Insert the SD card into the module.
-3. Upload your sketch that includes `ConfigReader` and call:
-
-   ```cpp
-   ConfigReader cfg;
-   if (!cfg.loadFromSD(CONFIG_PATH)) {
-     Serial.println("Failed to load config");
-     while(true);
-   }
-   cfg.beginWiFi();
-   // Now you can initialize your LED driver using cfg fields
-   ```
-
+3. Install the Project with Platform.io to your ESP.
 4. The firmware will parse hardware settings and Wi‑Fi credentials at startup.
 
 ## Troubleshooting
 
-- **SD init failed**: Check CS pin wiring and SD card formatting.
+- **SD init failed**: Check CS pin wiring and SD card formated FAT.
 - **JSON parse error**: Verify that `config.json` is valid JSON (e.g., via [JSONLint](https://jsonlint.com/)).
 - **Wi‑Fi not connecting**: Confirm SSID/password are correct and in range.
 
