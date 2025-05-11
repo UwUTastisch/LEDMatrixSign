@@ -201,7 +201,7 @@ void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
     req->send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
-// GET /listimg
+// GET /api/listimg
 void handleListImages(AsyncWebServerRequest *req)
 {
     DynamicJsonDocument doc(1024);
