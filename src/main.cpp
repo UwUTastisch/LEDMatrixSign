@@ -149,24 +149,53 @@ void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
         req->send(400, "application/json", "{\"error\":\"bad json\"}");
         return;
     }
+
+    if (!doc.containsKey("chain") || !doc["chain"].is<JsonArray>())
+    {
+        req->send(400, "application/json", "{\"error\":\"missing or invalid chain\"}");
+        return;
+    }
+
     auto arr = doc["chain"].as<JsonArray>();
+    if (arr.size() == 0)
+    {
+        req->send(400, "application/json", "{\"error\":\"empty chain\"}");
+        return;
+    }
+
     memset(imageChain, 0, sizeof(imageChain));
     for (uint8_t i = 0; i < arr.size() && i < MAX_CHAIN; i++)
     {
-        imageChain[i] = arr[i].as<String>();
+        String imgName = arr[i].as<String>();
+        String imgPath = "/images/" + imgName;
+
+        if (!SD.exists(imgPath))
+        {
+            req->send(404, "application/json", "{\"error\":\"file not found: " + imgName + "\"}");
+            return;
+        }
+
+        imageChain[i] = imgName.substring(0, imgName.lastIndexOf('.')); // Remove extension
     }
-    uint16_t fps = doc["fps"].as<uint16_t>();
+
+    uint16_t fps = doc["fps"] | 24;
     if (fps == 0)
-        fps = 24;
+    {
+        req->send(400, "application/json", "{\"error\":\"invalid fps\"}");
+        return;
+    }
+
     frameDuration = 1000 / fps;
     currentFrame = 0;
 
-    // draw first immediately
+    // Draw first frame immediately
     if (imageChain[0].length())
     {
         String p = "/images/" + imageChain[0] + ".bmp";
         if (SD.exists(p))
+        {
             driver->drawBMP(p.c_str());
+        }
     }
 
     req->send(200, "application/json", "{\"status\":\"ok\"}");
@@ -184,8 +213,7 @@ void handleListImages(AsyncWebServerRequest *req)
         String nm = f.name();
         if (nm.endsWith(".bmp"))
         {
-            int dot = nm.lastIndexOf('.');
-            arr.add(nm.substring(1, dot));
+            arr.add(nm.substring(0)); // Include full file name with extension
         }
         f.close();
         f = dir.openNextFile();
