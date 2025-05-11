@@ -5,7 +5,23 @@
 #include <SD.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <AsyncTCP.h>
+#include <DNSServer.h>
+#include <esp_wifi.h>
 #include <vector>
+
+// ====== Wi-Fi and Captive Portal Settings ======
+const char *fallbackSSID = "ESP32_AP";     // Default SSID for captive portal
+const char *fallbackPassword = "test1234"; // Default password for testing
+#define MAX_CLIENTS 4
+#define WIFI_CHANNEL 6
+
+const IPAddress portalIP(4, 3, 2, 1);
+const IPAddress gatewayIP(4, 3, 2, 1);
+const IPAddress subnetMask(255, 255, 255, 0);
+const String portalURL = "http://4.3.2.1/index.html";
+
+DNSServer dnsServer;
 
 // Path to JSON configuration on SD card
 constexpr char CONFIG_PATH[] = "/config.json";
@@ -77,17 +93,47 @@ public:
         }
         Serial.printf("Connecting to Wi-Fi \"%s\" …\n", wifiSsid.c_str());
         WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
-        while (WiFi.status() != WL_CONNECTED)
+        unsigned long start = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - start < 10000)
         {
             delay(500);
             Serial.print('.');
         }
+
+        if (WiFi.status() != WL_CONNECTED)
+        {
+            Serial.println("❌ Wi-Fi connection failed, starting captive AP...");
+            startSoftAP();
+            setUpDNSServer();
+        }
+
         Serial.println();
         Serial.print("📶 IP Address: ");
         Serial.println(WiFi.localIP());
     }
 
 private:
+    // ====== Captive Portal Setup =====
+    void startSoftAP()
+    {
+        WiFi.mode(WIFI_MODE_AP);
+        WiFi.softAPConfig(portalIP, gatewayIP, subnetMask);
+        WiFi.softAP(fallbackSSID, fallbackPassword, WIFI_CHANNEL, 0, MAX_CLIENTS);
+        // disable AMPDU RX bug on Android
+        esp_wifi_stop();
+        esp_wifi_deinit();
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        cfg.ampdu_rx_enable = false;
+        esp_wifi_init(&cfg);
+        esp_wifi_start();
+    }
+
+    void setUpDNSServer()
+    {
+        dnsServer.setTTL(300);
+        dnsServer.start(53, "*", portalIP);
+    }
+
     void parseDocument(JsonDocument &doc)
     {
         // — Parse LED/matrix section —
