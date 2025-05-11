@@ -1,4 +1,4 @@
-// main.ino
+// main.h
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include "config.h"
@@ -48,96 +48,83 @@ String readUID(const String &id)
     return u;
 }
 
+
+// ——— Helper to slurp a file into a byte buffer ———
+bool readFileToBuffer(const String& path, std::vector<uint8_t>& outBuf) {
+    outBuf.clear();
+    File f = SD.open(path, FILE_READ);
+    if (!f) return false;
+    while (f.available()) {
+        outBuf.push_back(f.read());
+    }
+    f.close();
+    return true;
+}
+
 // ——— HTTP Handlers ———
 
-// GET /api/img?id=<ID>
-void handleGetImage(AsyncWebServerRequest *req)
-{
-    String id;
-    if (req->hasParam("id"))
-    {
-        id = req->getParam("id")->value();
-    }
-    else if (req->hasParam("uid"))
-    {
-        String uid = req->getParam("uid")->value();
-        // scan metadata for matching .uid
-        File md = SD.open("/metadata");
-        File f = md.openNextFile();
-        while (f)
-        {
-            String name = f.name();
-            if (name.endsWith(".uid"))
-            {
-                File uf = SD.open("/metadata/" + name);
-                if (uf.readString() == uid)
-                {
-                    int dot = name.lastIndexOf('.');
-                    id = name.substring(1, dot);
-                    uf.close();
-                    break;
-                }
-                uf.close();
-            }
-            f.close();
-            f = md.openNextFile();
-        }
-        md.close();
-        if (id.isEmpty())
-        {
-            req->send(404, "application/json", "{\"error\":\"not found\"}");
-            return;
-        }
-    }
-    else
-    {
-        req->send(400, "application/json", "{\"error\":\"missing id/uid\"}");
+// ——— GET /api/img?file=<FILENAME> ———
+void handleGetImage(AsyncWebServerRequest *req) {
+    if (!req->hasParam("file")) {
+        req->send(400, "application/json", "{\"error\":\"missing file\"}");
         return;
     }
+    String filename = req->getParam("file")->value();
+    String path     = "/images/" + filename;
 
-    String path = "/images/" + id + ".bmp";
-    if (!SD.exists(path))
-    {
+    if (!SD.exists(path)) {
         req->send(404, "application/json", "{\"error\":\"not found\"}");
         return;
     }
 
-    if (driver->drawBMP(path.c_str()))
-    {
-#if DEBUG_MATRIX
-        driver->debugPrintMatrix();
-#endif
-        req->send(200, "application/json", "{\"status\":\"ok\"}");
+    // Read raw bytes
+    std::vector<uint8_t> buf;
+    if (!readFileToBuffer(path, buf)) {
+        req->send(500, "application/json", "{\"error\":\"fs read\"}");
+        return;
     }
-    else
-    {
-        req->send(500, "application/json", "{\"error\":\"render fail\"}");
-    }
+
+    // Base64-encode
+    unsigned int encLen = encode_base64_length(buf.size());
+    unsigned char *outB = (unsigned char*)malloc(encLen + 1);
+    unsigned int actual = encode_base64(buf.data(), buf.size(), outB);
+    outB[actual] = '\0';
+    String b64((char*)outB);
+    free(outB);
+
+    // Build JSON response
+    DynamicJsonDocument doc(2048);
+    doc["img"]  = b64;
+    doc["file"] = filename;
+    String resp;
+    serializeJson(doc, resp);
+    req->send(200, "application/json", resp);
 }
 
-// POST /api/img  { "id":"…", "uid":"…", "img":"<base64-BMP>" }
-void handlePostImage(AsyncWebServerRequest *req, uint8_t *data, size_t len)
-{
-    DynamicJsonDocument doc(4 * 1024);
-    if (deserializeJson(doc, data, len))
-    {
+
+
+// ——— POST /api/img { "file":"…", "img":"<base64-BMP>" } ———
+void handlePostImage(AsyncWebServerRequest *req, uint8_t *data, size_t len) {
+    DynamicJsonDocument doc(4096);
+    if (deserializeJson(doc, data, len)) {
         req->send(400, "application/json", "{\"error\":\"bad json\"}");
         return;
     }
 
-    String id = doc["id"] | "";
-    if (id.isEmpty())
-        id = generateNewID();
+    String file = doc["file"] | "";
+    if (file.isEmpty()) {
+        req->send(400, "application/json", "{\"error\":\"missing file\"}");
+        return;
+    }
 
     String b64 = doc["img"].as<String>();
-    unsigned int inLen = b64.length();
-    unsigned int decLen = decode_base64_length((const unsigned char *)b64.c_str(), inLen);
-    auto *buf = (uint8_t *)malloc(decLen);
-    unsigned int got = decode_base64((const unsigned char *)b64.c_str(), inLen, buf);
+    unsigned int decLen = decode_base64_length((const unsigned char*)b64.c_str(), b64.length());
+    auto *buf = (uint8_t*)malloc(decLen);
+    unsigned int got = decode_base64((const unsigned char*)b64.c_str(), b64.length(), buf);
 
-    File f = SD.open("/images/" + id + ".bmp", FILE_WRITE);
-    if (!f)
-    {
+    String path = "/images/" + file;
+    File f = SD.open(path, FILE_WRITE);
+    if (!f) {
         free(buf);
         req->send(500, "application/json", "{\"error\":\"fs write\"}");
         return;
@@ -146,15 +133,8 @@ void handlePostImage(AsyncWebServerRequest *req, uint8_t *data, size_t len)
     f.close();
     free(buf);
 
-    if (doc.containsKey("uid"))
-    {
-        File uf = SD.open("/metadata/" + id + ".uid", FILE_WRITE);
-        uf.print(doc["uid"].as<String>());
-        uf.close();
-    }
-
-    DynamicJsonDocument out(64);
-    out["id"] = id;
+    DynamicJsonDocument out(256);
+    out["file"] = file;
     String res;
     serializeJson(out, res);
     req->send(200, "application/json", res);
@@ -229,6 +209,21 @@ void handleGetIndex(AsyncWebServerRequest *req)
     }
 }
 
+// GET /api/imgspec
+void handleGetSpec(AsyncWebServerRequest *req) {
+    DynamicJsonDocument doc(512);
+    doc["format"]     = "BMP";
+    doc["colorspace"] = "sRGB";
+    doc["width"]       = config.width;
+    doc["height"]      = config.height;
+    doc["bitDepth"]   = 24;
+    doc["compression"]= "none";
+    doc["maxSizeKB"]  = 450;
+    String out;
+    serializeJson(doc, out);
+    req->send(200, "application/json", out);
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -277,6 +272,7 @@ void setup()
     server.on("/api/listimg", HTTP_GET, handleListImages);
     server.on("/index.html", HTTP_GET, handleGetIndex);
     server.on("/", HTTP_GET, handleGetIndex);
+    server.on("/api/imgspec", HTTP_GET, handleGetSpec);
 
     server.begin();
 }
