@@ -14,6 +14,7 @@ MatrixDriver *driver;
 // Frame‐chain
 static const uint8_t MAX_CHAIN = 10;
 String imageChain[MAX_CHAIN];
+uint8_t chainLength    = 0;  
 uint8_t currentFrame = 0;
 uint16_t frameDuration = 1000 / 24; // default 24 FPS
 unsigned long lastUpdate = 0;
@@ -140,62 +141,68 @@ void handlePostImage(AsyncWebServerRequest *req, uint8_t *data, size_t len) {
     req->send(200, "application/json", res);
 }
 
-// POST /api/imgchain { "chain":["1","2",…], "fps":12 }
+// POST /api/imgchain { "chain":["1","2",…], "fps":12.5 }
 void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
 {
-    DynamicJsonDocument doc(2 * 1024);
-    if (deserializeJson(doc, data, len))
-    {
+    DynamicJsonDocument doc(2*1024);
+    if (deserializeJson(doc, data, len)) {
         req->send(400, "application/json", "{\"error\":\"bad json\"}");
         return;
     }
 
-    if (!doc.containsKey("chain") || !doc["chain"].is<JsonArray>())
-    {
+    if (!doc.containsKey("chain") || !doc["chain"].is<JsonArray>()) {
         req->send(400, "application/json", "{\"error\":\"missing or invalid chain\"}");
         return;
     }
-
     auto arr = doc["chain"].as<JsonArray>();
-    if (arr.size() == 0)
-    {
+    if (arr.size() == 0) {
         req->send(400, "application/json", "{\"error\":\"empty chain\"}");
         return;
     }
 
-    memset(imageChain, 0, sizeof(imageChain));
-    for (uint8_t i = 0; i < arr.size() && i < MAX_CHAIN; i++)
-    {
-        String imgName = arr[i].as<String>();
-        String imgPath = "/images/" + imgName;
-
-        if (!SD.exists(imgPath))
-        {
-            req->send(404, "application/json", "{\"error\":\"file not found: " + imgName + "\"}");
-            return;
-        }
-
-        imageChain[i] = imgName.substring(0, imgName.lastIndexOf('.')); // Remove extension
+    // Clear out any old entries
+    for (uint8_t i = 0; i < MAX_CHAIN; i++) {
+        imageChain[i].clear();
     }
 
-    uint16_t fps = doc["fps"] | 24;
-    if (fps == 0)
-    {
+    // Fill in the new chain, up to MAX_CHAIN
+    chainLength = 0;
+    for (uint8_t i = 0; i < arr.size() && i < MAX_CHAIN; i++) {
+        String fn = arr[i].as<String>();
+        String path = "/images/" + fn;
+        if (!SD.exists(path)) {
+            req->send(404, "application/json",
+                      "{\"error\":\"file not found: " + fn + "\"}");
+            return;
+        }
+        // strip “.bmp” so we can re‐add it later in loop()
+        imageChain[i] = fn.substring(0, fn.lastIndexOf('.'));
+        chainLength++;
+    }
+
+    // Compute our per‐frame delay
+    float fps = doc["fps"].is<float>() ? doc["fps"].as<float>() : 1.0;
+    if (fps <= 0) {
         req->send(400, "application/json", "{\"error\":\"invalid fps\"}");
         return;
     }
+    frameDuration = static_cast<uint16_t>(1000.0 / fps);
 
-    frameDuration = 1000 / fps;
+
+    #ifdef DEBUG
+        Serial.printf("FPS as String: %s\n", doc["fps"].as<String>().c_str());
+        Serial.printf("FPS: %.2f\n", fps);
+        Serial.printf("frameDuration: %u ms\n", frameDuration);
+    #endif
+    
+    // Reset playback
     currentFrame = 0;
+    lastUpdate  = millis();
 
-    // Draw first frame immediately
-    if (imageChain[0].length())
-    {
+    // Draw the first frame immediately
+    if (chainLength) {
         String p = "/images/" + imageChain[0] + ".bmp";
-        if (SD.exists(p))
-        {
-            driver->drawBMP(p.c_str());
-        }
+        driver->drawBMP(p.c_str());
     }
 
     req->send(200, "application/json", "{\"status\":\"ok\"}");
@@ -307,18 +314,27 @@ void setup()
 
 void loop()
 {
+    // nothing to do if no chain loaded
+    if (chainLength == 0) return;
+    // check for new frames
+
     unsigned long now = millis();
-    if (now - lastUpdate >= frameDuration)
-    {
+    if (now - lastUpdate >= frameDuration) {
         lastUpdate = now;
-        if (imageChain[currentFrame].length())
-        {
-            String p = "/images/" + imageChain[currentFrame] + ".bmp";
-            if (SD.exists(p))
-            {
-                driver->drawBMP(p.c_str());
+
+        // draw current frame
+        String fn = imageChain[currentFrame];
+        if (fn.length()) {
+            String path = "/images/" + fn + ".bmp";
+            if (SD.exists(path)) {
+                driver->drawBMP(path.c_str());
             }
-            currentFrame = (currentFrame + 1) % MAX_CHAIN;
+            else {
+                Serial.printf("❌ File not found: %s\n", path.c_str());
+            }
         }
+
+        // step to next, wrap at chainLength
+        currentFrame = (currentFrame + 1) % chainLength;
     }
 }
