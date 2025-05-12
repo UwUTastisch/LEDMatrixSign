@@ -1,6 +1,8 @@
 // config.h
 #pragma once
 
+#define DEBUG_MATRIX 0
+
 #include <SPI.h>
 #include <SD.h>
 #include <WiFi.h>
@@ -27,15 +29,15 @@ DNSServer dnsServer;
 constexpr char CONFIG_PATH[] = "/config.json";
 #define SD_CS 22
 
-// ——— Per-panel layout ———
+// ——— Per-panel layout using WLED flags ———
 struct PanelConfig
 {
-    bool enabled;  // panel on/off
-    uint16_t x, y; // panel origin
-    uint16_t w, h; // panel size
-    bool rotate;   // 90° CW?
-    bool flipV;    // vertical flip?
-    bool serp;     // serpentine override?
+    uint16_t x, y;    // panel origin in the big matrix
+    uint16_t w, h;    // panel dimensions
+    bool bottomFirst; // 'b' start at bottom edge
+    bool rightFirst;  // 'r' start at right edge
+    bool vertical;    // 'v' run strips vertically (else horizontally)
+    bool serpentine;  // 's' zig-zag every other strip
 };
 
 class ConfigReader
@@ -52,17 +54,14 @@ public:
     String wifiSsid;
     String wifiPassword;
 
-    // ——— Load entire config.json from SD (incl. Wi-Fi) ———
     bool loadFromSD(const char *path)
     {
-        // init SPI+SD
         SPI.begin();
         if (!SD.begin(SD_CS))
         {
             Serial.println("❌ SD init failed!");
             return false;
         }
-
         File f = SD.open(path);
         if (!f)
         {
@@ -78,12 +77,10 @@ public:
             Serial.printf("❌ JSON parse error: %s\n", err.c_str());
             return false;
         }
-
         parseDocument(doc);
         return true;
     }
 
-    // ——— Connect Wi-Fi using loaded creds ———
     void beginWiFi()
     {
         if (wifiSsid.isEmpty())
@@ -99,21 +96,18 @@ public:
             delay(500);
             Serial.print('.');
         }
-
         if (WiFi.status() != WL_CONNECTED)
         {
-            Serial.println("❌ Wi-Fi connection failed, starting captive AP...");
+            Serial.println("❌ Wi-Fi failed, starting captive AP…");
             startSoftAP();
             setUpDNSServer();
         }
-
         Serial.println();
         Serial.print("📶 IP Address: ");
         Serial.println(WiFi.localIP());
     }
 
 private:
-    // ====== Captive Portal Setup =====
     void startSoftAP()
     {
         WiFi.mode(WIFI_MODE_AP);
@@ -147,20 +141,21 @@ private:
         order = ins0["order"].as<uint8_t>();
         reverse = ins0["rev"].as<bool>();
 
+        // — Parse panels using WLED flags —
         auto panelsArr = hwLed["matrix"]["panels"].as<JsonArray>();
         width = height = 0;
         panels.clear();
         for (auto p : panelsArr)
         {
             PanelConfig pc;
-            pc.enabled = p["b"].as<bool>();
             pc.x = p["x"].as<uint16_t>();
             pc.y = p["y"].as<uint16_t>();
             pc.w = p["w"].as<uint16_t>();
             pc.h = p["h"].as<uint16_t>();
-            pc.rotate = p["r"].as<bool>();
-            pc.flipV = p["v"].as<bool>();
-            pc.serp = p["s"].as<bool>();
+            pc.bottomFirst = p["b"].as<bool>();
+            pc.rightFirst = p["r"].as<bool>();
+            pc.vertical = p["v"].as<bool>();
+            pc.serpentine = p["s"].as<bool>();
             panels.push_back(pc);
             width = max<uint16_t>(width, pc.x + pc.w);
             height = max<uint16_t>(height, pc.y + pc.h);

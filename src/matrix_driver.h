@@ -17,6 +17,8 @@ public:
     MatrixDriver(ConfigReader &c)
         : cfg(c), strip(c.stripLen, c.pin, NEO_GRB + NEO_KHZ800) {}
 
+    void debugPrintMatrix();
+
     void begin()
     {
         strip.begin();
@@ -29,76 +31,67 @@ public:
     {
         if (x >= cfg.width || y >= cfg.height)
             return -1;
-        int panelIdx = -1;
-        uint32_t offset = 0;
 
+        // find which panel this (x,y) lives in and accumulate offset
+        uint32_t offset = 0;
+        int panelIdx = -1;
         for (size_t i = 0; i < cfg.panels.size(); i++)
         {
-            auto &P = cfg.panels[i];
-            if (!P.enabled)
-            {
-                offset += uint32_t(P.w) * P.h;
-                continue;
-            }
-            if (x >= P.x && x < P.x + P.w &&
-                y >= P.y && y < P.y + P.h)
+            const auto &P = cfg.panels[i];
+            uint32_t panelSize = P.w * P.h;
+            if (x >= P.x && x < P.x + P.w && y >= P.y && y < P.y + P.h)
             {
                 panelIdx = i;
                 break;
             }
-            offset += uint32_t(P.w) * P.h;
+            offset += panelSize;
         }
         if (panelIdx < 0)
             return -1;
+        const auto &P = cfg.panels[panelIdx];
 
-        auto &P = cfg.panels[panelIdx];
-        int lx = x - P.x, ly = y - P.y;
-        // rotate 90° CW
-        if (P.rotate)
-        {
-            int ox = lx;
-            lx = P.h - 1 - ly;
-            ly = ox;
-        }
-        // vertical flip
-        if (P.flipV)
-        {
-            ly = P.h - 1 - ly;
-        }
+        // local coords in panel
+        uint16_t lx = x - P.x;
+        uint16_t ly = y - P.y;
 
-        uint32_t idxInPanel;
-        switch (cfg.order)
+        // flip for rightFirst / bottomFirst
+        uint16_t xp = P.rightFirst ? (P.w - 1 - lx) : lx;
+        uint16_t yp = P.bottomFirst ? (P.h - 1 - ly) : ly;
+
+        // choose strip index and position along strip
+        uint32_t stripIndex, posInStrip, stripLength;
+        if (P.vertical)
         {
-        case 0:
-            idxInPanel = ly * P.w + lx;
-            break;
-        case 1:
-            idxInPanel = lx * P.h + ly;
-            break;
-        case 2: // serpentine rows
-            if (ly & 1)
-                idxInPanel = ly * P.w + (P.w - 1 - lx);
-            else
-                idxInPanel = ly * P.w + lx;
-            break;
-        case 3: // serpentine cols
-            if (lx & 1)
-                idxInPanel = lx * P.h + (P.h - 1 - ly);
-            else
-                idxInPanel = lx * P.h + ly;
-            break;
-        default:
-            idxInPanel = ly * P.w + lx;
+            stripIndex = xp;
+            posInStrip = yp;
+            stripLength = P.h;
+        }
+        else
+        {
+            stripIndex = yp;
+            posInStrip = xp;
+            stripLength = P.w;
         }
 
+        // serpentine every other strip
+        if (P.serpentine && (stripIndex & 1))
+        {
+            posInStrip = stripLength - 1 - posInStrip;
+        }
+
+        // combine into panel-local index
+        uint32_t idxInPanel = stripIndex * stripLength + posInStrip;
+        uint32_t pixelIndex = offset + idxInPanel;
+        if (pixelIndex >= cfg.stripLen)
+            return -1;
+
+        // global reverse flag
         if (cfg.reverse)
         {
-            idxInPanel = (cfg.stripLen - 1) - (offset + idxInPanel);
+            pixelIndex = (cfg.stripLen - 1) - pixelIndex;
         }
-        uint32_t globalIdx = cfg.startLED + cfg.skipLEDs + offset + idxInPanel;
-        if (globalIdx >= cfg.startLED + cfg.stripLen)
-            return -1;
-        return int(globalIdx);
+
+        return int(cfg.startLED + cfg.skipLEDs + pixelIndex);
     }
 
     void setPixel(uint16_t x, uint16_t y,
@@ -108,7 +101,6 @@ public:
         if (i >= 0)
             strip.setPixelColor(i, strip.Color(r, g, b));
     }
-
     // Read little-endian 32-bit
     static uint32_t read32(File &f)
     {
@@ -119,7 +111,7 @@ public:
         return b0 | b1 | b2 | b3;
     }
 
-    // Draw a 24-bpp BMP onto the matrix
+    // Draw a 24-bpp BMP onto the matrix with general nearest-neighbor scaling
     bool drawBMP(const char *filename)
     {
         File f = SD.open(filename, FILE_READ);
@@ -128,7 +120,7 @@ public:
             Serial.printf("❌ Open BMP %s failed\n", filename);
             return false;
         }
-        // “BM”?
+        // — Header check —
         if (f.read() != 'B' || f.read() != 'M')
         {
             Serial.println("❌ Not a BMP");
@@ -161,39 +153,133 @@ public:
             return false;
         }
 
+        // — Prep for scaling —
+        int absH = abs(bmpH);
+        // rowSize padded to 4-byte boundary:
         uint32_t rowSize = ((uint32_t(bmpW) * 3 + 3) & ~3);
+
+        // buffer one source row of pixels
+        struct Pixel
+        {
+            uint8_t r, g, b;
+        };
+        Pixel *rowBuf = (Pixel *)malloc(sizeof(Pixel) * bmpW);
+        if (!rowBuf)
+        {
+            Serial.println("❌ Out of memory");
+            f.close();
+            return false;
+        }
+
+        // clear your matrix
         strip.clear();
 
-        for (int row = 0; row < abs(bmpH); row++)
+        // Precompute ratios:
+        float fy = float(absH) / float(cfg.height);
+        float fx = float(bmpW) / float(cfg.width);
+
+        // For each destination row
+        for (int y = 0; y < cfg.height; y++)
         {
-            int srcRow = (bmpH > 0) ? (bmpH - 1 - row) : row;
-            f.seek(dataOffset + uint32_t(srcRow) * rowSize);
-            for (int col = 0; col < bmpW; col++)
+            // map to source row (nearest-neighbor)
+            int srcRow = min(int(y * fy), absH - 1);
+            // account for BMP’s bottom-up storage if bmpH>0
+            int bmpRow = (bmpH > 0) ? (absH - 1 - srcRow) : srcRow;
+            // seek & read that one row
+            f.seek(dataOffset + uint32_t(bmpRow) * rowSize);
+            for (int x = 0; x < bmpW; x++)
             {
-                uint8_t b = f.read();
-                uint8_t g = f.read();
-                uint8_t r = f.read();
-                int x = min(int((col * cfg.width) / bmpW), cfg.width - 1);
-                int y = min(int((row * cfg.height) / abs(bmpH)), cfg.height - 1);
-                setPixel(x, y, r, g, b);
+                uint8_t bb = f.read();
+                uint8_t gg = f.read();
+                uint8_t rr = f.read();
+                rowBuf[x] = {rr, gg, bb};
+            }
+
+            // now map each destination X → srcCol, and setPixel
+            for (int x = 0; x < cfg.width; x++)
+            {
+                int srcCol = min(int(x * fx), bmpW - 1);
+                auto &p = rowBuf[srcCol];
+                setPixel(x, y, p.r, p.g, p.b);
             }
         }
+
+        free(rowBuf);
         f.close();
+#if DEBUG_MATRIX
+        debugPrintMatrix(*this);
+#endif
         strip.show();
         return true;
     }
 
-    // Optional mesh-dump over Serial
-    void debugPrintMatrix()
+    // Call this once you’ve filled the strip (e.g. after drawPNG() or show())
+    void debugPrintMatrix(MatrixDriver &driver)
     {
-        Serial.println(F("=== Matrix indices ==="));
+        auto &strip = driver.strip;
+        auto &cfg = driver.cfg;
+
+        const char *RESET = "\x1b[0m";
+        auto printColor = [&](uint32_t c)
+        {
+            uint8_t r = (c >> 16) & 0xFF;
+            uint8_t g = (c >> 8) & 0xFF;
+            uint8_t b = c & 0xFF;
+            Serial.printf("\x1b[38;2;%u;%u;%um#%06X%s ",
+                          r, g, b, c, RESET);
+        };
+
+        // 1) Original Img Mesh
+        Serial.println(F("=== Original Img Mesh (hex colors) ==="));
         for (uint16_t y = 0; y < cfg.height; y++)
         {
             for (uint16_t x = 0; x < cfg.width; x++)
             {
-                Serial.printf("%4d", xyToIndex(x, y));
+                int idx = driver.xyToIndex(x, y);
+                uint32_t c = (idx >= 0)
+                                 ? (strip.getPixelColor(idx) & 0xFFFFFF)
+                                 : 0;
+                printColor(c);
             }
             Serial.println();
         }
+
+        // 2) Remapping Mesh
+        Serial.println(F("\n=== Remapping Mesh (LED indices) ==="));
+        for (uint16_t y = 0; y < cfg.height; y++)
+        {
+            for (uint16_t x = 0; x < cfg.width; x++)
+            {
+                Serial.printf("%3d ", driver.xyToIndex(x, y));
+            }
+            Serial.println();
+        }
+
+        // 3) Remapping Sequence
+        Serial.println(F("\n=== Remapping Sequence (send order 1→N) ==="));
+        for (uint16_t y = 0; y < cfg.height; y++)
+        {
+            for (uint16_t x = 0; x < cfg.width; x++)
+            {
+                int idx = driver.xyToIndex(x, y);
+                Serial.printf("%3u ",
+                              (idx >= 0) ? (idx + 1) : 0);
+            }
+            Serial.println();
+        }
+
+        // 4) Origin → Destination Map
+        Serial.println(F("\n=== Origin → Destination Map (origIdx -> sendIdx) ==="));
+        // flat, comma-separated
+        for (uint16_t orig = 0; orig < strip.numPixels(); orig++)
+        {
+            uint16_t x = orig % cfg.width;
+            uint16_t y = orig / cfg.width;
+            int send = driver.xyToIndex(x, y);
+            Serial.printf("%u->%d", orig, send);
+            if (orig + 1 < strip.numPixels())
+                Serial.print(", ");
+        }
+        Serial.println();
     }
 };

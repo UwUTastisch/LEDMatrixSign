@@ -109,28 +109,42 @@ void handleGetImage(AsyncWebServerRequest *req)
 }
 
 // ——— POST /api/img { "file":"…", "img":"<base64-BMP>" } ———
-void handlePostImage(AsyncWebServerRequest *req, uint8_t *data, size_t len)
+void handlePostImageComplete(AsyncWebServerRequest *req, const String &body)
 {
-    DynamicJsonDocument doc(4096);
-    if (deserializeJson(doc, data, len))
+    // 1. Allocate a JSON document just big enough (with a little wiggle room)
+    size_t capacity = body.length() * 11 / 10 + 512;
+    DynamicJsonDocument doc(capacity);
+
+    // 2. Parse
+    auto err = deserializeJson(doc, body);
+    if (err)
     {
+        Serial.printf("❌ JSON parse failed: %s\n", err.c_str());
         req->send(400, "application/json", "{\"error\":\"bad json\"}");
         return;
     }
 
-    String file = doc["file"] | "";
-    if (file.isEmpty())
+    // 3. Extract fields
+    String filename = doc["file"] | "";
+    String b64data = doc["img"] | "";
+    if (filename.isEmpty() || b64data.isEmpty())
     {
-        req->send(400, "application/json", "{\"error\":\"missing file\"}");
+        req->send(400, "application/json", "{\"error\":\"missing file or img\"}");
         return;
     }
 
-    String b64 = doc["img"].as<String>();
-    unsigned int decLen = decode_base64_length((const unsigned char *)b64.c_str(), b64.length());
-    auto *buf = (uint8_t *)malloc(decLen);
-    unsigned int got = decode_base64((const unsigned char *)b64.c_str(), b64.length(), buf);
+    // 4. Decode Base64
+    unsigned int expectedLen = decode_base64_length((const unsigned char *)b64data.c_str(), b64data.length());
+    auto *buf = (uint8_t *)malloc(expectedLen);
+    if (!buf)
+    {
+        req->send(500, "application/json", "{\"error\":\"memory alloc failed\"}");
+        return;
+    }
+    unsigned int actualLen = decode_base64((const unsigned char *)b64data.c_str(), b64data.length(), buf);
 
-    String path = "/images/" + file;
+    // 5. Write to SD
+    String path = "/images/" + filename;
     File f = SD.open(path, FILE_WRITE);
     if (!f)
     {
@@ -138,15 +152,13 @@ void handlePostImage(AsyncWebServerRequest *req, uint8_t *data, size_t len)
         req->send(500, "application/json", "{\"error\":\"fs write\"}");
         return;
     }
-    f.write(buf, got);
+    f.write(buf, actualLen);
     f.close();
     free(buf);
 
-    DynamicJsonDocument out(256);
-    out["file"] = file;
-    String res;
-    serializeJson(out, res);
-    req->send(200, "application/json", res);
+    // 6. Success response
+    String resp = String("{\"file\":\"") + filename + "\"}";
+    req->send(200, "application/json", resp);
 }
 
 // POST /api/imgchain { "chain":["1","2",…], "fps":12.5 }
@@ -296,13 +308,30 @@ void setUpAPIServer()
       } });
     // Matrix/Image API Handlers on same server
     server.on("/api/img", HTTP_GET, handleGetImage);
-    server.on("/api/img", HTTP_POST, [](AsyncWebServerRequest *request)
+    server.on("/api/img", HTTP_POST,
+              /* onRequest  */ [](AsyncWebServerRequest *req)
               {
-                  // Handle pre-processing if needed
+                  // Nothing to do here; we wait for the body callback
               },
-              NULL, // No upload handler
-              [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
-              { handlePostImage(request, data, len); });
+              /* onUpload   */ nullptr,
+              /* onBody     */ [](AsyncWebServerRequest *req, uint8_t *data, size_t len, size_t index, size_t total)
+              {
+        static String bodyBuffer;
+
+        // Start of a new upload?
+        if (index == 0)
+        {
+            bodyBuffer = "";
+        }
+
+        // Append this chunk
+        bodyBuffer += String((char *)data).substring(0, len);
+
+        // If this is the last chunk…
+        if (index + len == total)
+        {
+            handlePostImageComplete(req, bodyBuffer);
+        } });
     server.on("/api/imgchain", HTTP_POST, [](AsyncWebServerRequest *request)
               {
                   // Handle pre-processing if needed
