@@ -108,6 +108,25 @@ void handleGetImage(AsyncWebServerRequest *req)
     req->send(200, "application/json", resp);
 }
 
+void handlePostBrightness(AsyncWebServerRequest *req, uint8_t *data, size_t len)
+{
+    DynamicJsonDocument doc(256);
+    if (deserializeJson(doc, data, len))
+    {
+        req->send(400, "application/json", "{\"error\":\"bad json\"}");
+        return;
+    }
+
+    uint8_t newBrightness = doc["brightness"] | 255;
+    if (newBrightness > 255)
+        newBrightness = 255;
+
+    // Update the brightness
+    driver->brightness = newBrightness;
+
+    req->send(200, "application/json", "{\"status\":\"ok\"}");
+}
+
 // ——— POST /api/img { "file":"…", "img":"<base64-BMP>" } ———
 void handlePostImageComplete(AsyncWebServerRequest *req, const String &body)
 {
@@ -306,6 +325,11 @@ void setUpAPIServer()
       } else {
         req->send(404, "text/plain", "Missing index.html");
       } });
+    // Brightness Slider
+    server.on("/api/brightness", HTTP_POST, [](AsyncWebServerRequest *request) {},
+              NULL, // No upload handler
+              [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              { handlePostBrightness(request, data, len); });
     // Matrix/Image API Handlers on same server
     server.on("/api/img", HTTP_GET, handleGetImage);
     server.on("/api/img", HTTP_POST,

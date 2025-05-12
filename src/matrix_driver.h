@@ -13,6 +13,7 @@ class MatrixDriver
 public:
     ConfigReader &cfg;
     Adafruit_NeoPixel strip;
+    int brightness = 255;
 
     MatrixDriver(ConfigReader &c)
         : cfg(c), strip(c.stripLen, c.pin, NEO_GRB + NEO_KHZ800) {}
@@ -99,7 +100,12 @@ public:
     {
         int i = xyToIndex(x, y);
         if (i >= 0)
+        {
+            r = (r * brightness) / 255;
+            g = (g * brightness) / 255;
+            b = (b * brightness) / 255;
             strip.setPixelColor(i, strip.Color(r, g, b));
+        }
     }
     // Read little-endian 32-bit
     static uint32_t read32(File &f)
@@ -209,6 +215,7 @@ public:
 #if DEBUG_MATRIX
         debugPrintMatrix(*this);
 #endif
+        // strip.setBrightness(brightness); // Ensure current brightness is applied
         strip.show();
         return true;
     }

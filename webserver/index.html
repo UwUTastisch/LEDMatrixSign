@@ -77,6 +77,10 @@
         <div class="color-swatch" data-color="#666666" style="background:#666666"></div>
         <div class="color-swatch" data-color="#ffffff" style="background:#ffffff"></div>
         <div id="customWrapper" class="color-swatch" data-color="#ffffff"><input type="color" id="customColor" value="#ffffff"></div>
+        <div id="brightness-control" style="margin: 10px 0; text-align: center;">
+        <label for="brightnessSlider">Brightness: </label>
+        <input type="range" id="brightnessSlider" min="0" max="255" value="255" style="width: 80%;">
+        <span id="brightnessValue">255</span>
       </div>
       <canvas id="matrix"></canvas>
       <div>
@@ -125,7 +129,8 @@
     let spec = { width: 8, height: 8 };
     let chain = [], images = [];
     let useDurationMode = false;
-  
+    let brightness = 255;
+
     // New controls
     const fpsLabel      = document.getElementById('fpsLabel');
     const durationLabel = document.getElementById('durationLabel');
@@ -266,7 +271,25 @@
       for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
       return btoa(bin);
     }
-  
+    
+    document.getElementById('brightnessSlider').addEventListener('input', function(e) {
+      brightness = parseInt(e.target.value);
+      document.getElementById('brightnessValue').textContent = brightness;
+      updateBrightness();
+    });
+
+    async function updateBrightness() {
+      try {
+        await fetch('/api/brightness', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brightness: brightness })
+        });
+      } catch (e) {
+        console.error('Failed to update brightness', e);
+      }
+    }
+
     document.getElementById('uploadBtn').addEventListener('click', async () => {
       const filename = document.getElementById('filenameInput').value.trim();
       if (!filename) return alert('Enter filename.');
