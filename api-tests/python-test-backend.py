@@ -90,6 +90,7 @@ def set_image_chain():
     return jsonify({"status": "ok"})
 
 @app.route('/index.html')
+@app.route('/favicon.ico')
 @app.route('/')
 def serve_frontend():
     return send_from_directory(STATIC_DIR, 'index.html')
