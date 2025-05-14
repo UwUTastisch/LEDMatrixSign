@@ -32,6 +32,14 @@
     @media (max-width: 768px) { .container { flex-direction: column; } }
     .panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); padding: 15px; flex: 1; }
     #matrix { image-rendering: pixelated; cursor: crosshair; border: 1px solid var(--panel-border); display: block; margin: 10px auto; width: 100%; height: auto; }
+    .filename-group {display: flex;align-items: stretch;margin: 5px 0;border-radius: 6px;overflow: hidden;border: 1px solid var(--panel-border);background: var(--input-bg);width: 100%;max-width: 400px;}
+    .filename-group input {border: none;margin: 0;padding: 6px 8px;background: transparent;}
+    #filenameInput {flex: 2 1 60%;min-width: 120px;border-radius: 6px 0 0 6px;}
+    #filenameExt {flex: 1 0 60px;max-width: 80px;border-left: 1px solid var(--panel-border);border-radius: 0 6px 6px 0;text-align: center;}
+    .suffix-label {display: flex;align-items: center;padding: 0 8px;background: var(--btn-bg);border-left: 1px solid var(--panel-border);border-right: 1px solid var(--panel-border);font-size: 0.9em;color: var(--fg);user-select: none;min-width: 40px;justify-content: center;}
+    .upload-section {display: flex;flex-direction: column;align-items: center;margin-bottom: 1.5rem;}
+    #uploadBtn {margin: 0 auto;padding: 8px 24px;border-radius: 6px;transition: all 0.2s ease;font-weight: 500;}
+    #uploadBtn:hover {transform: translateY(-1px);box-shadow: 0 2px 4px rgba(0,0,0,0.1);color: var(--fg);user-select: none;min-width: 40px;justify-content: center;}
     /* Palette */
     #palette-controls { text-align: center; margin-bottom: 10px; }
     #pickColorBtn.active { background: var(--btn-hover); }
@@ -83,8 +91,12 @@
         <span id="brightnessValue">255</span>
       </div>
       <canvas id="matrix"></canvas>
-      <div>
-        <input type="text" id="filenameInput" placeholder="Filename (e.g., art1.bmp)">
+      <div class="upload-section">
+        <div class="filename-group">
+          <input type="text" id="filenameInput" placeholder="Base name">
+          <span id="numberSuffix" class="suffix-label">1</span>
+          <input type="text" id="filenameExt" placeholder=".bmp">
+        </div>
         <button id="uploadBtn">Upload</button>
       </div>
     </div>
@@ -130,6 +142,7 @@
     let chain = [], images = [];
     let useDurationMode = false;
     let brightness = 255;
+    let fileExt = '.bmp'; // Default extension
 
     // New controls
     const fpsLabel      = document.getElementById('fpsLabel');
@@ -137,6 +150,34 @@
     const fpsInput      = document.getElementById('fpsInput');
     const durationInput = document.getElementById('durationInput');
     const toggleModeBtn = document.getElementById('toggleModeBtn');
+
+    function updateSuffixDisplay() {
+      const baseName = document.getElementById('filenameInput').value.trim();
+      const userExt = document.getElementById('filenameExt').value.trim();
+      const finalExt = userExt || fileExt;
+      
+      if (!baseName) {
+        document.getElementById('numberSuffix').textContent = '1';
+        return;
+      }
+
+      const cleanBase = baseName.replace(/[^a-z0-9]/gi, '').toLowerCase();
+      const regex = new RegExp(`^${cleanBase}(\\d+)\\${finalExt}$`);
+      let maxNum = 0;
+      
+      images.forEach(filename => {
+        const match = filename.match(regex);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      });
+      
+      document.getElementById('numberSuffix').textContent = maxNum + 1;
+    }
+
+    document.getElementById('filenameInput').addEventListener('input', updateSuffixDisplay);
+    document.getElementById('filenameExt').addEventListener('input', updateSuffixDisplay);
   
     function applySpec() {
       canvas.width = spec.width;
@@ -150,11 +191,28 @@
   
     async function initSpec() {
       try {
-        const res  = await fetch('/api/imgspec');
+        const res = await fetch('/api/imgspec');
         const json = await res.json();
         spec = { width: json.width, height: json.height };
+        fileExt = `.${json.format.toLowerCase()}`;
+        document.getElementById('filenameExt').value = fileExt;
+        updateSuffixDisplay(); // Add this line
       } catch (e) { /* ignore */ }
       applySpec();
+    }
+
+    function getNextFilename(baseName) {
+      const cleanBase = baseName.replace(/[^a-z0-9]/gi, '').toLowerCase();
+      const finalExt = document.getElementById('filenameExt').value.trim() || fileExt;
+      const regex = new RegExp(`^${cleanBase}(\\d+)\\${finalExt}$`);
+      
+      let maxNum = 0;
+      images.forEach(filename => {
+        const match = filename.match(regex);
+        if (match) maxNum = Math.max(maxNum, parseInt(match[1], 10));
+      });
+      
+      return `${cleanBase}${maxNum + 1}${finalExt}`;
     }
   
     function updateSelectedSwatch() {
@@ -291,20 +349,55 @@
     }
 
     document.getElementById('uploadBtn').addEventListener('click', async () => {
-      const filename = document.getElementById('filenameInput').value.trim();
-      if (!filename) return alert('Enter filename.');
-      const base64 = canvasToBMPBase64(canvas);
       try {
-        const res  = await fetch('/api/img', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file: filename, img: base64 })
-        });
-        const json = await res.json();
-        alert('Uploaded: ' + json.file);
-        loadImageList();
-      } catch {
-        alert('Upload failed');
+          // Get and validate inputs
+          const baseName = document.getElementById('filenameInput').value.trim();
+          if (!baseName) return alert('Enter filename base.');
+          
+          // Get extension and clean base name
+          const userExt = document.getElementById('filenameExt').value.trim();
+          const finalExt = userExt || fileExt;
+          const cleanBase = baseName.replace(/[^a-z0-9]/gi, '').toLowerCase();
+          
+          // Find existing files with this base and extension
+          const regex = new RegExp(`^${cleanBase}(\\d+)\\${finalExt}$`);
+          let maxNum = 0;
+          
+          images.forEach(filename => {
+              const match = filename.match(regex);
+              if (match) {
+                  const num = parseInt(match[1], 10);
+                  if (num > maxNum) maxNum = num;
+              }
+          });
+          
+          // Generate new filename
+          const newNum = maxNum + 1;
+          const filename = `${cleanBase}${newNum}${finalExt}`;
+          
+          // Convert canvas and upload
+          const base64 = canvasToBMPBase64(canvas);
+          const response = await fetch('/api/img', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                  file: filename,
+                  img: base64 
+              })
+          });
+          
+          if (!response.ok) throw new Error('Upload failed');
+          
+          // Update UI
+          const json = await response.json();
+          document.getElementById('filenameInput').value = cleanBase; // Reset to base without number
+          document.getElementById('numberSuffix').textContent = newNum + 1;
+          alert(`Uploaded successfully: ${json.file}`);
+          loadImageList();
+          
+      } catch (error) {
+          console.error('Upload error:', error);
+          alert(`Upload failed: ${error.message}`);
       }
     });
   
