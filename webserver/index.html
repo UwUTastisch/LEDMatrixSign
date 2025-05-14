@@ -6,62 +6,116 @@
   <title>Matrix Dashboard</title>
   <style>
     :root {
-      --bg: #f0f0f0;
-      --fg: #222;
-      --panel-bg: #fff;
-      --panel-border: #ccc;
-      --btn-bg: #e0e0e0;
-      --btn-hover: #d0d0d0;
-      --input-bg: #fff;
-      --selected-border: #007ACC;
+    --bg: #f0f0f0;
+    --fg: #222;
+    --panel-bg: #fff;
+    --panel-border: #ccc;
+    --btn-bg: #e0e0e0;
+    --btn-hover: #d0d0d0;
+    --input-bg: #fff;
+    --selected-border: #007ACC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #181818;
+      --fg: #eee;
+      --panel-bg: #242424;
+      --panel-border: #444;
+      --btn-bg: #333;
+      --btn-hover: #444;
+      --input-bg: #303030;
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #181818;
-        --fg: #eee;
-        --panel-bg: #242424;
-        --panel-border: #444;
-        --btn-bg: #333;
-        --btn-hover: #444;
-        --input-bg: #303030;
-      }
-    }
-    body { background: var(--bg); color: var(--fg); font-family: sans-serif; margin: 0; padding: 20px; }
-    h1 { text-align: center; margin-bottom: 20px; }
-    .container { display: flex; gap: 20px; }
-    @media (max-width: 768px) { .container { flex-direction: column; } }
-    .panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); padding: 15px; flex: 1; }
-    #matrix { image-rendering: pixelated; cursor: crosshair; border: 1px solid var(--panel-border); display: block; margin: 10px auto; width: 100%; height: auto; }
-    .filename-group {display: flex;align-items: stretch;margin: 5px 0;border-radius: 6px;overflow: hidden;border: 1px solid var(--panel-border);background: var(--input-bg);width: 100%;max-width: 400px;}
-    .filename-group input {border: none;margin: 0;padding: 6px 8px;background: transparent;}
-    #filenameInput {flex: 2 1 60%;min-width: 120px;border-radius: 6px 0 0 6px;}
-    #filenameExt {flex: 1 0 60px;max-width: 80px;border-left: 1px solid var(--panel-border);border-radius: 0 6px 6px 0;text-align: center;}
-    .suffix-label {display: flex;align-items: center;padding: 0 8px;background: var(--btn-bg);border-left: 1px solid var(--panel-border);border-right: 1px solid var(--panel-border);font-size: 0.9em;color: var(--fg);user-select: none;min-width: 40px;justify-content: center;}
-    .upload-section {display: flex;flex-direction: column;align-items: center;margin-bottom: 1.5rem;}
-    #uploadBtn {margin: 0 auto;padding: 8px 24px;border-radius: 6px;transition: all 0.2s ease;font-weight: 500;}
-    #uploadBtn:hover {transform: translateY(-1px);box-shadow: 0 2px 4px rgba(0,0,0,0.1);color: var(--fg);user-select: none;min-width: 40px;justify-content: center;}
-    /* Palette */
-    #palette-controls { text-align: center; margin-bottom: 10px; }
-    #pickColorBtn.active { background: var(--btn-hover); }
-    #palette { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-    .color-swatch { width: 30px; height: 30px; border: 2px solid var(--panel-border); cursor: pointer; border-radius: 4px; position: relative; }
-    .color-swatch.selected { border-color: var(--selected-border); }
-    .color-swatch input { opacity: 0; width: 100%; height: 100%; cursor: pointer; position: absolute; top: 0; left: 0; }
-    /* Controls */
-    button { background: var(--btn-bg); border: none; padding: 6px 12px; margin: 5px 2px; border-radius: 4px; cursor: pointer; color: var(--fg); }
-    button:hover { background: var(--btn-hover); }
-    input[type="text"], input[type="number"] { background: var(--input-bg); border: 1px solid var(--panel-border); padding: 4px 8px; border-radius: 4px; color: var(--fg); }
-    textarea { background: var(--input-bg); border: 1px solid var(--panel-border); color: var(--fg); }
-    /* Other panels */
-    #imageList, #chain-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--panel-border); background: var(--input-bg); }
-    .image-item, #chain-list li { display: flex; align-items: center; justify-content: space-between; padding: 5px; border-bottom: 1px solid var(--panel-border); }
-    .image-item:last-child, #chain-list li:last-child { border-bottom: none; }
-    #chain-list img { width: 30px; height: 30px; margin-right: 10px; }
-    .image-item .btn-group {
-      display: flex;
-      gap: 6px;
-      margin-left: auto;
-    }
+  }
+  body { background: var(--bg); color: var(--fg); font-family: sans-serif; margin: 0; padding: 20px; }
+  h1 { text-align: center; margin-bottom: 20px; }
+  .container { display: flex; gap: 20px; }
+  @media (max-width: 768px) { .container { flex-direction: column; } }
+  .panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); padding: 15px; flex: 1; }
+  .filename-group {display: flex;align-items: stretch;margin: 5px 0;border-radius: 6px;overflow: hidden;border: 1px solid var(--panel-border);background: var(--input-bg);width: 100%;max-width: 400px;}
+  .filename-group input {border: none;margin: 0;padding: 6px 8px;background: transparent;}
+  #filenameInput {flex: 2 1 60%;min-width: 120px;border-radius: 6px 0 0 6px;}
+  #filenameExt {flex: 1 0 60px;max-width: 80px;border-left: 1px solid var(--panel-border);border-radius: 0 6px 6px 0;text-align: center;}
+  .suffix-label {display: flex;align-items: center;padding: 0 8px;background: var(--btn-bg);border-left: 1px solid var(--panel-border);border-right: 1px solid var(--panel-border);font-size: 0.9em;color: var(--fg);user-select: none;min-width: 40px;justify-content: center;}
+  .upload-section {display: flex;flex-direction: column;align-items: center;margin-bottom: 1.5rem;}
+  #uploadBtn {margin: 0 auto;padding: 8px 24px;border-radius: 6px;transition: all 0.2s ease;font-weight: 500;}
+  #uploadBtn:hover {transform: translateY(-1px);box-shadow: 0 2px 4px rgba(0,0,0,0.1);color: var(--fg);user-select: none;min-width: 40px;justify-content: center;}
+  /* Palette */
+  #palette-controls { text-align: center; margin-bottom: 10px; }
+  #pickColorBtn.active { background: var(--btn-hover); }
+  #palette { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .color-swatch { width: 30px; height: 30px; border: 2px solid var(--panel-border); cursor: pointer; border-radius: 4px; position: relative; }
+  .color-swatch.selected { border-color: var(--selected-border); }
+  .color-swatch input { opacity: 0; width: 100%; height: 100%; cursor: pointer; position: absolute; top: 0; left: 0; }
+  /* Controls */
+  button { background: var(--btn-bg); border: none; padding: 6px 12px; margin: 5px 2px; border-radius: 4px; cursor: pointer; color: var(--fg); }
+  button:hover { background: var(--btn-hover); }
+  input[type="text"], input[type="number"] { background: var(--input-bg); border: 1px solid var(--panel-border); padding: 4px 8px; border-radius: 4px; color: var(--fg); }
+  textarea { background: var(--input-bg); border: 1px solid var(--panel-border); color: var(--fg); }
+  /* Other panels */
+  #imageList, #chain-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--panel-border); background: var(--input-bg); }
+  .image-item, #chain-list li { display: flex; align-items: center; justify-content: space-between; padding: 5px; border-bottom: 1px solid var(--panel-border); }
+  .image-item:last-child, #chain-list li:last-child { border-bottom: none; }
+  #chain-list img { width: 30px; height: 30px; margin-right: 10px; }
+  .image-item .btn-group {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  /* Canvas Container Styles */
+  .canvas-container {
+    position: relative;
+    width: 100%;
+    padding-top: 100%; /* Creates square container based on width */
+    margin: 10px auto;
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    background: #000; /* Fallback for canvas background */
+  }
+
+  #matrix, #overlayCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100% !important;
+    image-rendering: pixelated;
+  }
+
+  #matrix {
+    cursor: crosshair;
+    z-index: 1;
+    background: #000;
+  }
+
+  #overlayCanvas {
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* Ensure canvas elements have inline dimensions */
+  #matrix, #overlayCanvas {
+    width: 100%;
+    height: 100%;
+  }
+
+   .btn-group button {
+    transition: all 0.2s ease;
+    position: relative;
+  }
+  
+  .reference-active {
+    background: var(--selected-border) !important;
+    color: white !important;
+    box-shadow: 0 0 0 2px var(--selected-border);
+    transform: translateY(-2px);
+  }
+  
+  .reference-active::after {
+    content: "✓";
+    margin-left: 5px;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
+  }
   </style>
 </head>
 <body>
@@ -95,7 +149,10 @@
         <input type="range" id="brightnessSlider" min="0" max="255" value="255" style="width: 80%;">
         <span id="brightnessValue">255</span>
       </div>
-      <canvas id="matrix"></canvas>
+      <div class="canvas-container">
+        <canvas id="matrix"></canvas>
+        <canvas id="overlayCanvas"></canvas>
+      </div>
       <div class="upload-section">
         <div class="filename-group">
           <input type="text" id="filenameInput" placeholder="Base name">
@@ -147,7 +204,10 @@
     let chain = [], images = [];
     let useDurationMode = false;
     let brightness = 255;
-    let fileExt = '.bmp'; // Default extension
+    let fileExt = '.bmp'; // Default extension, will be updated on init
+    const overlayCanvas = document.getElementById('overlayCanvas');
+    let ctxOverlay = overlayCanvas.getContext('2d');
+    let referenceImage = null;
 
     // New controls
     const fpsLabel      = document.getElementById('fpsLabel');
@@ -185,13 +245,26 @@
     document.getElementById('filenameExt').addEventListener('input', updateSuffixDisplay);
   
     function applySpec() {
+      // Set actual pixel dimensions
       canvas.width = spec.width;
       canvas.height = spec.height;
+      overlayCanvas.width = spec.width;
+      overlayCanvas.height = spec.height;
+
+      // Set display dimensions through CSS
       canvas.style.width = '100%';
-      canvas.style.height = 'auto';
+      canvas.style.height = '100%';
+      overlayCanvas.style.width = '100%';
+      overlayCanvas.style.height = '100%';
+
+      // Initialize contexts
       ctx = canvas.getContext('2d');
+      ctxOverlay = overlayCanvas.getContext('2d');
+      
+      // Clear and initialize drawing canvas
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, spec.width, spec.height);
+      ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     }
   
     async function initSpec() {
@@ -204,6 +277,46 @@
         updateSuffixDisplay(); // Add this line
       } catch (e) { /* ignore */ }
       applySpec();
+    }
+
+    async function setReferenceImage(name) {
+      try {
+        // Clear existing overlay first
+        ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        
+        const res = await fetch(`/api/img?file=${encodeURIComponent(name)}`);
+        const json = await res.json();
+        referenceImage = new Image();
+        referenceImage.onload = () => {
+          // Create offscreen canvas to process image
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = spec.width;
+          tempCanvas.height = spec.height;
+          const tempCtx = tempCanvas.getContext('2d');
+          
+          // Draw image to temp canvas
+          tempCtx.drawImage(referenceImage, 0, 0);
+          const imageData = tempCtx.getImageData(0, 0, spec.width, spec.height);
+          const data = imageData.data;
+
+          // Process pixels: make black transparent and apply opacity
+          for (let i = 0; i < data.length; i += 4) {
+            // Check if pixel is black (RGB 0,0,0)
+            if (data[i] === 0 && data[i+1] === 0 && data[i+2] === 0) {
+              data[i+3] = 0; // Set alpha to 0
+            } else {
+              data[i+3] = 77; // ~30% opacity (255 * 0.3)
+            }
+          }
+
+          // Update overlay canvas
+          ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+          ctxOverlay.putImageData(imageData, 0, 0);
+        };
+        referenceImage.src = `data:image/bmp;base64,${json.img}`;
+      } catch (e) {
+        console.error('Error loading reference image:', e);
+      }
     }
 
     function getNextFilename(baseName) {
@@ -425,15 +538,37 @@
           item.className = 'image-item';
           const span = document.createElement('span');
           span.textContent = name;
+          
+          const refBtn = document.createElement('button');
+            refBtn.textContent = 'Reference';
+            refBtn.onclick = () => {
+              const wasActive = refBtn.classList.contains('reference-active');
+              
+              // Remove active state from all buttons
+              document.querySelectorAll('.reference-active').forEach(btn => {
+                btn.classList.remove('reference-active');
+              });
+              
+              // Clear overlay if clicking the same button
+              if (wasActive) {
+                ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+              } else {
+                setReferenceImage(name);
+                refBtn.classList.add('reference-active');
+              }
+            };
+
+          // Existing buttons
           const pv = document.createElement('button');
           pv.textContent = 'Preview';
           pv.onclick = () => previewImage(name);
           const add = document.createElement('button');
           add.textContent = 'Add';
           add.onclick = () => addToChain(name);
+
           const btnGroup = document.createElement('div');
           btnGroup.className = 'btn-group';
-          btnGroup.append(pv, add);
+          btnGroup.append(pv, refBtn, add);
           item.append(span, btnGroup);
           list.append(item);
         });
