@@ -57,6 +57,11 @@
     .image-item, #chain-list li { display: flex; align-items: center; justify-content: space-between; padding: 5px; border-bottom: 1px solid var(--panel-border); }
     .image-item:last-child, #chain-list li:last-child { border-bottom: none; }
     #chain-list img { width: 30px; height: 30px; margin-right: 10px; }
+    .image-item .btn-group {
+      display: flex;
+      gap: 6px;
+      margin-left: auto;
+    }
   </style>
 </head>
 <body>
@@ -426,7 +431,10 @@
           const add = document.createElement('button');
           add.textContent = 'Add';
           add.onclick = () => addToChain(name);
-          item.append(span, pv, add);
+          const btnGroup = document.createElement('div');
+          btnGroup.className = 'btn-group';
+          btnGroup.append(pv, add);
+          item.append(span, btnGroup);
           list.append(item);
         });
     }
