@@ -373,8 +373,7 @@ void setUpAPIServer()
 void setup()
 {
     Serial.begin(115200);
-    delay(100);
-
+    Serial.println("Starting up…");
     // — Load JSON config, init Wi-Fi & SD
     if (!config.loadFromSD(CONFIG_PATH))
     {
@@ -409,6 +408,9 @@ void loop()
 {
     if (WiFi.getMode() == WIFI_MODE_AP)
     {
+#ifdef DEBUG
+        Serial.println("AP mode, processing DNS requests");
+#endif
         dnsServer.processNextRequest();
     }
 
@@ -419,6 +421,9 @@ void loop()
     if (now - lastUpdate >= frameDuration)
     {
         lastUpdate = now;
+#ifdef DEBUG
+        Serial.printf("Frame %u of %u\n", currentFrame + 1, chainLength);
+#endif
 
         // draw current frame
         String fn = imageChain[currentFrame];

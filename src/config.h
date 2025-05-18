@@ -1,7 +1,9 @@
 // config.h
 #pragma once
 
+#if !DEBUG_MATRIX
 #define DEBUG_MATRIX 0
+#endif
 
 #include <SPI.h>
 #include <SD.h>
@@ -27,7 +29,19 @@ DNSServer dnsServer;
 
 // Path to JSON configuration on SD card
 constexpr char CONFIG_PATH[] = "/config.json";
+#if !SD_CS
 #define SD_CS 22
+#endif
+
+#if !SD_MOSI
+#define SD_MOSI MOSI
+#endif
+#if !SD_MISO
+#define SD_MISO MISO
+#endif
+#if !SD_SCK
+#define SD_SCK SCK
+#endif
 
 // ——— Per-panel layout using WLED flags ———
 struct PanelConfig
@@ -56,8 +70,14 @@ public:
 
     bool loadFromSD(const char *path)
     {
-        SPI.begin();
-        if (!SD.begin(SD_CS))
+        // Serial.printf("Checking SD card at Pins: CS=%d, MOSI=%d, MISO=%d, SCK=%d\n", SD_CS, SD_MOSI, SD_MISO, -1);
+#if DEBUG_MATRIX
+        delay(1000);
+        Serial.printf("Checking SD card at Pins: CS=%d, MOSI=%d, MISO=%d, SCK=%d\n", SD_CS, SD_MOSI, SD_MISO, -1);
+#endif
+
+        SPI.begin(SD_SCK, SD_MISO, SD_MOSI, -1);
+        if (!SD.begin(SD_CS, SPI, 4000000))
         {
             Serial.println("❌ SD init failed!");
             return false;

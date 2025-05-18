@@ -6,6 +6,7 @@
 #include <SD.h>
 #include <Adafruit_NeoPixel.h>
 #include "config.h"
+#define min(a, b) ((a) < (b) ? (a) : (b))
 
 // ——— Drives WS2812 strip & renders BMPs ———
 class MatrixDriver
