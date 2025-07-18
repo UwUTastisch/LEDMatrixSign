@@ -40,7 +40,13 @@
   #uploadBtn {margin: 0 auto;padding: 8px 24px;border-radius: 6px;transition: all 0.2s ease;font-weight: 500;}
   #uploadBtn:hover {transform: translateY(-1px);box-shadow: 0 2px 4px rgba(0,0,0,0.1);color: var(--fg);user-select: none;min-width: 40px;justify-content: center;}
   /* Palette */
-  #palette-controls { text-align: center; margin-bottom: 10px; }
+  #palette-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
   #pickColorBtn.active { background: var(--btn-hover); }
   #palette { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
   .color-swatch { width: 30px; height: 30px; border: 2px solid var(--panel-border); cursor: pointer; border-radius: 4px; position: relative; }
@@ -110,11 +116,10 @@
     box-shadow: 0 0 0 2px var(--selected-border);
     transform: translateY(-2px);
   }
-  
-  .reference-active::after {
-    content: "✓";
-    margin-left: 5px;
-    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3));
+  .tool-active {
+    background: var(--selected-border) !important;
+    color: white !important;
+    transform: translateY(-2px);
   }
   </style>
 </head>
@@ -124,7 +129,13 @@
     <div class="panel">
       <h2>Draw Pixel Art</h2>
       <div id="palette-controls">
-        <button id="pickColorBtn">Pick Color</button>
+        <button id="brushToolBtn" class="tool-active" title="Brush">🖌️</button>
+        <button id="bucketToolBtn" title="Bucket">🪣</button>
+        <button id="pickColorBtn" title="Color Picker">🎨</button>
+        <label for="brushSize" style="margin-left:10px;">Brush Size: <span id="brushSizeValue">1</span></label>
+        <input type="range" id="brushSize" min="1" max="8" step="1" value="1" style="margin:0 5px; width: 100px;">
+        <button id="undoBtn" disabled>Undo</button>
+        <button id="redoBtn" disabled>Redo</button>
       </div>
       <div id="palette">
         <!-- Base colors + lighter versions -->
@@ -144,10 +155,6 @@
         <div class="color-swatch" data-color="#666666" style="background:#666666"></div>
         <div class="color-swatch" data-color="#ffffff" style="background:#ffffff"></div>
         <div id="customWrapper" class="color-swatch" data-color="#ffffff"><input type="color" id="customColor" value="#ffffff"></div>
-        <div id="brightness-control" style="margin: 10px 0; text-align: center;">
-        <label for="brightnessSlider">Brightness: </label>
-        <input type="range" id="brightnessSlider" min="0" max="255" value="255" style="width: 80%;">
-        <span id="brightnessValue">255</span>
       </div>
       <div class="canvas-container">
         <canvas id="matrix"></canvas>
@@ -186,6 +193,11 @@
         </div>
         <button id="startChainBtn">Start</button>
         <button id="clearChainBtn">Clear</button>
+        <div id="brightness-control" style="margin-top:10px; text-align:center;">
+          <label for="brightnessSlider">Brightness: </label>
+          <input type="range" id="brightnessSlider" min="0" max="255" value="255" style="width: 80%;">
+          <span id="brightnessValue">255</span>
+        </div>
         <ul id="chain-list"></ul>
       </section>
     </div>
@@ -208,6 +220,60 @@
     const overlayCanvas = document.getElementById('overlayCanvas');
     let ctxOverlay = overlayCanvas.getContext('2d');
     let referenceImage = null;
+
+    // Brush and history for undo/redo
+    let brushSize = 1;
+    const brushSizeInput = document.getElementById('brushSize');
+    const brushSizeValue = document.getElementById('brushSizeValue');
+    brushSizeInput.addEventListener('input', () => {
+      brushSize = parseInt(brushSizeInput.value);
+      brushSizeValue.textContent = brushSize;
+    });
+    // History stack
+    let history = [];
+    let historyIndex = -1;
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    undoBtn.addEventListener('click', () => { if (historyIndex > 0) restoreState(historyIndex - 1); });
+    redoBtn.addEventListener('click', () => { if (historyIndex < history.length - 1) restoreState(historyIndex + 1); });
+
+    // Tool palette buttons
+    const brushToolBtn = document.getElementById('brushToolBtn');
+    const bucketToolBtn = document.getElementById('bucketToolBtn');
+    let fillMode = false;
+    brushToolBtn.addEventListener('click', () => {
+      fillMode = false;
+      pickMode = false;
+      brushToolBtn.classList.add('tool-active');
+      bucketToolBtn.classList.remove('tool-active');
+      pickColorBtn.classList.remove('tool-active');
+    });
+    bucketToolBtn.addEventListener('click', () => {
+      fillMode = true;
+      pickMode = false;
+      bucketToolBtn.classList.add('tool-active');
+      brushToolBtn.classList.remove('tool-active');
+      pickColorBtn.classList.remove('tool-active');
+    });
+  
+    function updateUndoRedoButtons() {
+      undoBtn.disabled = historyIndex <= 0;
+      redoBtn.disabled = historyIndex >= history.length - 1;
+    }
+    function saveState() {
+      // truncate future history
+      history = history.slice(0, historyIndex + 1);
+      // save current state
+      history.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      historyIndex = history.length - 1;
+      updateUndoRedoButtons();
+    }
+    function restoreState(index) {
+      const imgData = history[index];
+      ctx.putImageData(imgData, 0, 0);
+      historyIndex = index;
+      updateUndoRedoButtons();
+    }
 
     // New controls
     const fpsLabel      = document.getElementById('fpsLabel');
@@ -359,8 +425,12 @@
     });
   
     pickColorBtn.addEventListener('click', () => {
+      // Toggle color-picker tool
       pickMode = !pickMode;
-      pickColorBtn.classList.toggle('active', pickMode);
+      fillMode = false;
+      pickColorBtn.classList.toggle('tool-active', pickMode);
+      brushToolBtn.classList.remove('tool-active');
+      bucketToolBtn.classList.remove('tool-active');
     });
   
     function getCursorPos(e) {
@@ -389,13 +459,28 @@
         updateSelectedSwatch();
       } else {
         ctx.fillStyle = selectedColor;
-        ctx.fillRect(x, y, 1, 1);
+        // Draw with circular brush centered on the cursor
+        ctx.beginPath();
+        const centerX = x + 0.5;
+        const centerY = y + 0.5;
+        const radius = brushSize / 2;
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
   
     ['mousedown','mousemove','mouseup','mouseleave'].forEach(evt => {
       if (evt === 'mousedown')
-        canvas.addEventListener(evt, e => { isDrawing = true; drawAt(e); });
+        canvas.addEventListener(evt, e => {
+          saveState();
+          const { x, y } = getCursorPos(e);
+          if (fillMode) {
+            floodFill(x, y);
+          } else {
+            isDrawing = true;
+            drawAt(e);
+          }
+        });
       else if (evt === 'mousemove')
         canvas.addEventListener(evt, e => { if (isDrawing) drawAt(e); });
       else
@@ -654,6 +739,40 @@
     });
   
     initSpec().then(loadImageList);
+
+    function floodFill(startX, startY) {
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imgData.data;
+      const width = imgData.width;
+      const height = imgData.height;
+      const startIdx = (startY * width + startX) * 4;
+      const target = { r: data[startIdx], g: data[startIdx+1], b: data[startIdx+2], a: data[startIdx+3] };
+      const fillColor = hexToRgb(selectedColor);
+      // no-op if fill color matches target
+      if (target.r === fillColor.r && target.g === fillColor.g && target.b === fillColor.b) return;
+      const stack = [[startX, startY]];
+      while (stack.length) {
+        const [x, y] = stack.pop();
+        if (x < 0 || x >= width || y < 0 || y >= height) continue;
+        const idx = (y * width + x) * 4;
+        if (data[idx] === target.r && data[idx+1] === target.g && data[idx+2] === target.b && data[idx+3] === target.a) {
+          data[idx] = fillColor.r;
+          data[idx+1] = fillColor.g;
+          data[idx+2] = fillColor.b;
+          data[idx+3] = 255;
+          stack.push([x+1, y], [x-1, y], [x, y+1], [x, y-1]);
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    // Helper: convert hex color to RGB object
+    function hexToRgb(hex) {
+      hex = hex.replace(/^#/, '');
+      if (hex.length === 3) hex = hex.split('').map(h => h + h).join('');
+      const num = parseInt(hex, 16);
+      return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+    }
   </script>
 </body>
 </html>
