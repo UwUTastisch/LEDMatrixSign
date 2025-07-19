@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Matrix Dashboard</title>
+  <style>
+    /* Color variables */
+    :root {
+      --bg: #f0f0f0;
+      --fg: #222;
+      --panel-bg: #fff;
+      --panel-border: #ccc;
+      --btn-bg: #e0e0e0;
+      --btn-hover: #d0d0d0;
+      --input-bg: #fff;
+    }
+    @media (prefs-color-scheme: dark), (prefers-color-scheme: dark) {
+      :root {
+        --bg: #181818;
+        --fg: #eee;
+        --panel-bg: #242424;
+        --panel-border: #444;
+        --btn-bg: #333;
+        --btn-hover: #444;
+        --input-bg: #303030;
+      }
+    }
+    body { background: var(--bg); color: var(--fg); font-family: sans-serif; margin: 0; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 20px; }
+    .container { display: flex; gap: 20px; }
+    @media (max-width: 768px) { .container { flex-direction: column; } }
+    .panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; padding: 15px; flex: 1; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    #matrix { image-rendering: pixelated; cursor: crosshair; border: 1px solid var(--panel-border); display: block; margin: 10px auto; width: 100%; height: auto; }
+    #palette { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .color-swatch { width: 30px; height: 30px; border: 1px solid var(--panel-border); cursor: pointer; border-radius: 4px; }
+    button { background: var(--btn-bg); border: none; padding: 6px 12px; margin: 5px 2px; border-radius: 4px; cursor: pointer; color: var(--fg); }
+    button:hover { background: var(--btn-hover); }
+    input[type="text"], input[type="number"], input[type="color"] { background: var(--input-bg); border: 1px solid var(--panel-border); padding: 4px 8px; border-radius: 4px; color: var(--fg); }
+    #imageList { max-height: 200px; overflow-y: auto; border: 1px solid var(--panel-border); padding: 5px; background: var(--input-bg); }
+    .image-item { display: flex; align-items: center; justify-content: space-between; padding: 5px; border-bottom: 1px solid var(--panel-border); }
+    .image-item:last-child { border-bottom: none; }
+    .image-item:hover { background: var(--btn-hover); }
+    #preview img { display: block; margin: 10px auto; border: 1px solid var(--panel-border); width: 100%; height: auto; }
+    #chain-list { list-style: none; padding: 0; max-height: 150px; overflow-y: auto; border: 1px solid var(--panel-border); background: var(--input-bg); margin-top: 10px; }
+    #chain-list li { display: flex; align-items: center; justify-content: space-between; padding: 5px; border-bottom: 1px solid var(--panel-border); }
+    #chain-list li:last-child { border-bottom: none; }
+    #chain-list img { width: 30px; height: 30px; margin-right: 10px; border: 1px solid var(--panel-border); }
+  </style>
+</head>
+<body>
+  <h1>Matrix Dashboard</h1>
+  <div class="container">
+
+    <!-- Drawing Panel -->
+    <div class="panel">
+      <h2>Draw Pixel Art</h2>
+      <div id="palette">
+        <div class="color-swatch" data-color="#ff0000" style="background:#ff0000"></div>
+        <div class="color-swatch" data-color="#00ff00" style="background:#00ff00"></div>
+        <div class="color-swatch" data-color="#0000ff" style="background:#0000ff"></div>
+        <div class="color-swatch" data-color="#ffff00" style="background:#ffff00"></div>
+        <div class="color-swatch" data-color="#000000" style="background:#000000"></div>
+        <input type="color" id="customColor" value="#ffffff">
+      </div>
+      <canvas id="matrix"></canvas>
+      <div>
+        <input type="text" id="filenameInput" placeholder="Filename (e.g., art1.bmp)">
+        <button id="uploadBtn">Upload</button>
+      </div>
+    </div>
+
+    <!-- Tools Panel -->
+    <div class="panel">
+      <section>
+        <h2>Browse Saved Images</h2>
+        <input type="text" id="searchBox" placeholder="Search images...">
+        <div id="imageList"></div>
+        <div id="preview">
+          <h3>Preview</h3>
+          <img id="previewImg" alt="Image preview">
+        </div>
+      </section>
+
+      <section>
+        <h2>Build Animation Chain</h2>
+        <div><label>FPS: <input type="number" id="fpsInput" value="5" min="1"></label></div>
+        <button id="startChainBtn">Start</button>
+        <button id="clearChainBtn">Clear</button>
+        <ul id="chain-list"></ul>
+      </section>
+    </div>
+
+  </div>
+
+  <script>
+    const canvas = document.getElementById('matrix');
+    let ctx = canvas.getContext('2d');
+    const palette = document.getElementById('palette');
+    const customColor = document.getElementById('customColor');
+    let selectedColor = '#ff0000';
+    let isDrawing = false;
+    let spec = { width: 8, height: 8 };
+    let chain = [];
+    let images = [];
+
+    function applySpec() {
+      canvas.width = spec.width;
+      canvas.height = spec.height;
+      canvas.style.width = '100%';
+      canvas.style.height = 'auto';
+      ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, spec.width, spec.height);
+    }
+
+    async function initSpec() {
+      try {
+        const res = await fetch('/api/imgspec');
+        const json = await res.json();
+        spec = { width: json.width, height: json.height };
+      } catch {
+        console.warn('Using default spec');
+      }
+      applySpec();
+    }
+
+    // BMP encoder (24-bit, no compression)
+    function canvasToBMPBase64(cnv) {
+      const w = cnv.width, h = cnv.height;
+      const rowSize = Math.floor((w * 3 + 3) / 4) * 4;
+      const pixelArraySize = rowSize * h;
+      const headerSize = 14 + 40;
+      const buffer = new ArrayBuffer(headerSize + pixelArraySize);
+      const dv = new DataView(buffer);
+      let offset = 0;
+      // BITMAPFILEHEADER
+      dv.setUint16(offset, 0x4D42, true); offset += 2;
+      dv.setUint32(offset, buffer.byteLength, true); offset += 4;
+      dv.setUint32(offset, 0, true); offset += 4;
+      dv.setUint32(offset, headerSize, true); offset += 4;
+      // BITMAPINFOHEADER
+      dv.setUint32(offset, 40, true); offset += 4;
+      dv.setInt32(offset, w, true); offset += 4;
+      dv.setInt32(offset, h, true); offset += 4;
+      dv.setUint16(offset, 1, true); offset += 2;
+      dv.setUint16(offset, 24, true); offset += 2;
+      dv.setUint32(offset, 0, true); offset += 4;
+      dv.setUint32(offset, pixelArraySize, true); offset += 4;
+      dv.setInt32(offset, 2835, true); offset += 4;
+      dv.setInt32(offset, 2835, true); offset += 4;
+      dv.setUint32(offset, 0, true); offset += 4;
+      dv.setUint32(offset, 0, true); offset += 4;
+      // pixel data (bottom-up)
+      const imgData = cnv.getContext('2d').getImageData(0, 0, w, h).data;
+      let pOff = headerSize;
+      for (let y = h - 1; y >= 0; y--) {
+        for (let x = 0; x < w; x++) {
+          const i = (y * w + x) * 4;
+          dv.setUint8(pOff++, imgData[i + 2]);
+          dv.setUint8(pOff++, imgData[i + 1]);
+          dv.setUint8(pOff++, imgData[i]);
+        }
+        while ((pOff - headerSize) % rowSize !== 0) dv.setUint8(pOff++, 0);
+      }
+      // Base64
+      const bytes = new Uint8Array(buffer);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin);
+    }
+
+    function getCursorPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = rect.width / canvas.width;
+      const scaleY = rect.height / canvas.height;
+      const clientX = e.clientX ?? e.touches[0].clientX;
+      const clientY = e.clientY ?? e.touches[0].clientY;
+      const x = Math.floor((clientX - rect.left) / scaleX);
+      const y = Math.floor((clientY - rect.top) / scaleY);
+      return { x, y };
+    }
+
+    function drawAt(e) {
+      const { x, y } = getCursorPos(e);
+      ctx.fillStyle = selectedColor;
+      ctx.fillRect(x, y, 1, 1);
+    }
+
+    // Draw events
+    ['mousedown','mousemove','mouseup','mouseleave'].forEach(evt => {
+      if (evt === 'mousedown') canvas.addEventListener(evt, e => (isDrawing = true, drawAt(e)));
+      else if (evt === 'mousemove') canvas.addEventListener(evt, e => isDrawing && drawAt(e));
+      else if (evt === 'mouseup' || evt === 'mouseleave') canvas.addEventListener(evt, () => isDrawing = false);
+    });
+    ['touchstart','touchmove','touchend','touchcancel'].forEach(evt => {
+      if (evt === 'touchstart') canvas.addEventListener(evt, e => (e.preventDefault(), isDrawing = true, drawAt(e)));
+      else if (evt === 'touchmove') canvas.addEventListener(evt, e => (e.preventDefault(), isDrawing && drawAt(e)));
+      else canvas.addEventListener(evt, e => (e.preventDefault(), isDrawing = false));
+    });
+
+    // Upload using Base64 BMP
+    document.getElementById('uploadBtn').addEventListener('click', async () => {
+      const filename = document.getElementById('filenameInput').value.trim();
+      if (!filename) return alert('Enter a filename.');
+      const base64 = canvasToBMPBase64(canvas);
+      try {
+        const res = await fetch('/api/img', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: filename, img: base64 })
+        });
+        const json = await res.json();
+        alert('Uploaded: ' + json.file);
+        loadImageList();
+      } catch {
+        alert('Upload failed');
+      }
+    });
+
+    async function loadImageList() {
+      try {
+        const res = await fetch('/api/listimg');
+        const json = await res.json();
+        images = json.list; renderImageList();
+      } catch {
+        console.error('Failed to load images');
+      }
+    }
+
+    function renderImageList(filter = '') {
+      const listEl = document.getElementById('imageList'); listEl.innerHTML = '';
+      images.filter(n => n.includes(filter)).forEach(name => {
+        const item = document.createElement('div'); item.className = 'image-item';
+        const span = document.createElement('span'); span.textContent = name;
+        const previewBtn = document.createElement('button'); previewBtn.textContent = 'Preview';
+        const addBtn = document.createElement('button'); addBtn.textContent = 'Add';
+        previewBtn.onclick = () => previewImage(name);
+        addBtn.onclick = () => addToChain(name);
+        item.append(span, previewBtn, addBtn);
+        listEl.append(item);
+      });
+    }
+
+    async function previewImage(name) {
+      try {
+        const res = await fetch(`/api/img?file=${encodeURIComponent(name)}`);
+        const json = await res.json();
+        document.getElementById('previewImg').src = `data:image/bmp;base64,${json.img}`;
+      } catch {
+        alert('Preview failed');
+      }
+    }
+
+    async function addToChain(name) {
+      try {
+        const res = await fetch(`/api/img?file=${encodeURIComponent(name)}`);
+        const json = await res.json();
+        const src = `data:image/bmp;base64,${json.img}`;
+        chain.push({ name, src }); updateChainUI();
+      } catch {
+        alert('Failed to add to chain');
+      }
+    }
+
+    function updateChainUI() {
+      const ul = document.getElementById('chain-list'); ul.innerHTML = '';
+      chain.forEach((item, i) => {
+        const li = document.createElement('li');
+        const img = document.createElement('img'); img.src = item.src;
+        const span = document.createElement('span'); span.textContent = item.name;
+        const btn = document.createElement('button'); btn.textContent = 'Remove'; btn.onclick = () => (chain.splice(i,1), updateChainUI());
+        li.append(img, span, btn); ul.append(li);
+      });
+    }
+
+    document.getElementById('clearChainBtn').addEventListener('click', () => (chain = [], updateChainUI()));
+    document.getElementById('startChainBtn').addEventListener('click', async () => {
+      if (!chain.length) return alert('Add images first');
+      const fps = parseInt(document.getElementById('fpsInput').value,10) || 5;
+      const names = chain.map(c => c.name);
+      try {
+        await fetch('/api/imgchain', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chain: names, fps })
+        }); alert('Animation started');
+      } catch {
+        alert('Failed to start animation');
+      }
+    });
+
+    // Init
+    initSpec().then(loadImageList);
+  </script>
+</body>
+</html>

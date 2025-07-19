@@ -51,7 +51,7 @@
   #palette { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
   .color-swatch { width: 30px; height: 30px; border: 2px solid var(--panel-border); cursor: pointer; border-radius: 4px; position: relative; }
   .color-swatch.selected { border-color: var(--selected-border); }
-  .color-swatch input { opacity: 0; width: 100%; height: 100%; cursor: pointer; position: absolute; top: 0; left: 0; }
+  .color-swatch input { opacity: 0; width: 100%; height: 100%; position: absolute; top: 0; left: 0; /* disable pointer events so inputs don’t intercept canvas or swatch clicks */ pointer-events: none; }
   /* Controls */
   button { background: var(--btn-bg); border: none; padding: 6px 12px; margin: 5px 2px; border-radius: 4px; cursor: pointer; color: var(--fg); }
   button:hover { background: var(--btn-hover); }
@@ -131,31 +131,12 @@
       <div id="palette-controls">
         <button id="brushToolBtn" class="tool-active" title="Brush">🖌️</button>
         <button id="bucketToolBtn" title="Bucket">🪣</button>
-        <button id="pickColorBtn" title="Color Picker">🎨</button>
         <label for="brushSize" style="margin-left:10px;">Brush Size: <span id="brushSizeValue">1</span></label>
         <input type="range" id="brushSize" min="1" max="8" step="1" value="1" style="margin:0 5px; width: 100px;">
         <button id="undoBtn" disabled>Undo</button>
         <button id="redoBtn" disabled>Redo</button>
       </div>
-      <div id="palette">
-        <!-- Base colors + lighter versions -->
-        <div class="color-swatch" data-color="#ff0000" style="background:#ff0000"></div>
-        <div class="color-swatch" data-color="#ff6666" style="background:#ff6666"></div>
-        <div class="color-swatch" data-color="#00ff00" style="background:#00ff00"></div>
-        <div class="color-swatch" data-color="#66ff66" style="background:#66ff66"></div>
-        <div class="color-swatch" data-color="#0000ff" style="background:#0000ff"></div>
-        <div class="color-swatch" data-color="#6666ff" style="background:#6666ff"></div>
-        <div class="color-swatch" data-color="#ffff00" style="background:#ffff00"></div>
-        <div class="color-swatch" data-color="#ffff66" style="background:#ffff66"></div>
-        <div class="color-swatch" data-color="#ff00ff" style="background:#ff00ff"></div>
-        <div class="color-swatch" data-color="#ff66ff" style="background:#ff66ff"></div>
-        <div class="color-swatch" data-color="#00ffff" style="background:#00ffff"></div>
-        <div class="color-swatch" data-color="#66ffff" style="background:#66ffff"></div>
-        <div class="color-swatch" data-color="#000000" style="background:#000000"></div>
-        <div class="color-swatch" data-color="#666666" style="background:#666666"></div>
-        <div class="color-swatch" data-color="#ffffff" style="background:#ffffff"></div>
-        <div id="customWrapper" class="color-swatch" data-color="#ffffff"><input type="color" id="customColor" value="#ffffff"></div>
-      </div>
+      <div id="palette"></div>
       <div class="canvas-container">
         <canvas id="matrix"></canvas>
         <canvas id="overlayCanvas"></canvas>
@@ -203,15 +184,72 @@
     </div>
   </div>
   <script>
+    // Core drawing variables
+    var isDrawing = false;  // flag for brush drawing
+
+    let selectedColor = '#E40303';
     const canvas = document.getElementById('matrix');
     let ctx = canvas.getContext('2d');
     const palette = document.getElementById('palette');
-    const pickColorBtn = document.getElementById('pickColorBtn');
-    let pickMode = false;
-    const customWrapper = document.getElementById('customWrapper');
-    const customColor = document.getElementById('customColor');
-    let selectedColor = '#ff0000';
-    let isDrawing = false;
+    // Color picker removed: no pickColorBtn or pickMode
+
+    // Palette persistence setup
+    const paletteSlots = 20;
+    const defaultPalette = [
+      '#FF0000','#FF7F00','#FFFF00','#7FFF00','#00FF00','#00FF7F','#00FFFF','#007FFF','#0000FF','#7F00FF',
+      '#FF00FF','#FF007F','#8B4513','#A9A9A9','#000000','#FFFFFF','#C0C0C0','#808080','#FFD700','#ADFF2F'
+    ];
+    let paletteColors = [];
+    function loadPaletteCookie() {
+      const match = document.cookie.match(/(?:^|; )palette=([^;]+)/);
+      if (match) {
+        try { paletteColors = JSON.parse(decodeURIComponent(match[1])); } catch {};
+      }
+      if (!Array.isArray(paletteColors) || paletteColors.length !== paletteSlots) {
+        paletteColors = defaultPalette.slice(0, paletteSlots);
+      }
+    }
+    function savePaletteCookie() {
+      document.cookie = 'palette=' + encodeURIComponent(JSON.stringify(paletteColors)) + ';path=/;max-age=' + (365*24*60*60);
+    }
+    function generatePaletteUI() {
+      palette.innerHTML = '';
+      for (let i = 0; i < paletteSlots; i++) {
+        const color = paletteColors[i];
+        const sw = document.createElement('div');
+        sw.className = 'color-swatch';
+        sw.dataset.index = i;
+        sw.dataset.color = color;
+        sw.style.background = color;
+        const inp = document.createElement('input');
+        inp.type = 'color'; inp.value = color;
+        inp.style.opacity = '0'; inp.style.width = '100%'; inp.style.height = '100%'; inp.style.position = 'absolute'; inp.style.top = '0'; inp.style.left = '0'; inp.style.zIndex = '-1';
+        inp.addEventListener('input', e => {
+          const c = e.target.value;
+          paletteColors[i] = c;
+          sw.dataset.color = c;
+          sw.style.background = c;
+          savePaletteCookie();
+          updateSelectedSwatch();
+        });
+        // long-press to open color picker
+        let pressTimer;
+        sw.addEventListener('mousedown', () => { pressTimer = setTimeout(() => inp.click(), 500); });
+        sw.addEventListener('mouseup', () => clearTimeout(pressTimer));
+        sw.addEventListener('mouseleave', () => clearTimeout(pressTimer));
+        sw.addEventListener('touchstart', () => { pressTimer = setTimeout(() => inp.click(), 500); });
+        sw.addEventListener('touchend', () => clearTimeout(pressTimer));
+        sw.appendChild(inp);
+        palette.appendChild(sw);
+      }
+      updateSelectedSwatch();
+    }
+    // Immediately initialize palette so it always appears
+    loadPaletteCookie();
+    generatePaletteUI();
+    selectedColor = paletteColors[0];
+    updateSelectedSwatch();
+
     let spec = { width: 8, height: 8 };
     let chain = [], images = [];
     let useDurationMode = false;
@@ -243,17 +281,13 @@
     let fillMode = false;
     brushToolBtn.addEventListener('click', () => {
       fillMode = false;
-      pickMode = false;
       brushToolBtn.classList.add('tool-active');
       bucketToolBtn.classList.remove('tool-active');
-      pickColorBtn.classList.remove('tool-active');
     });
     bucketToolBtn.addEventListener('click', () => {
       fillMode = true;
-      pickMode = false;
       bucketToolBtn.classList.add('tool-active');
       brushToolBtn.classList.remove('tool-active');
-      pickColorBtn.classList.remove('tool-active');
     });
   
     function updateUndoRedoButtons() {
@@ -343,6 +377,7 @@
         updateSuffixDisplay(); // Add this line
       } catch (e) { /* ignore */ }
       applySpec();
+      saveState();   // seed undo/redo stack with initial canvas
     }
 
     async function setReferenceImage(name) {
@@ -407,30 +442,9 @@
   
     palette.addEventListener('click', e => {
       const sw = e.target.closest('.color-swatch');
-      if (!sw || sw === customWrapper) return;
+      if (!sw) return;
       selectedColor = sw.dataset.color;
-      pickMode = false;
-      pickColorBtn.classList.remove('active');
       updateSelectedSwatch();
-    });
-  
-    customWrapper.addEventListener('click', () => customColor.click());
-    customColor.addEventListener('input', e => {
-      selectedColor = e.target.value;
-      customWrapper.dataset.color = selectedColor;
-      customWrapper.style.background = selectedColor;
-      pickMode = false;
-      pickColorBtn.classList.remove('active');
-      updateSelectedSwatch();
-    });
-  
-    pickColorBtn.addEventListener('click', () => {
-      // Toggle color-picker tool
-      pickMode = !pickMode;
-      fillMode = false;
-      pickColorBtn.classList.toggle('tool-active', pickMode);
-      brushToolBtn.classList.remove('tool-active');
-      bucketToolBtn.classList.remove('tool-active');
     });
   
     function getCursorPos(e) {
@@ -447,54 +461,54 @@
   
     function drawAt(e) {
       const { x, y } = getCursorPos(e);
-      if (pickMode) {
-        const data = ctx.getImageData(x, y, 1, 1).data;
-        selectedColor = '#' + [2,1,0].map(i =>
-          data[i].toString(16).padStart(2,'0')
-        ).join('');
-        customWrapper.dataset.color = selectedColor;
-        customWrapper.style.background = selectedColor;
-        pickMode = false;
-        pickColorBtn.classList.remove('active');
-        updateSelectedSwatch();
-      } else {
-        ctx.fillStyle = selectedColor;
-        // Draw with circular brush centered on the cursor
-        ctx.beginPath();
-        const centerX = x + 0.5;
-        const centerY = y + 0.5;
-        const radius = brushSize / 2;
-        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.fillStyle = selectedColor;
+      // Draw with circular brush centered on the cursor
+      ctx.beginPath();
+      const centerX = x + 0.5;
+      const centerY = y + 0.5;
+      const radius = brushSize / 2;
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.fill();
     }
   
-    ['mousedown','mousemove','mouseup','mouseleave'].forEach(evt => {
-      if (evt === 'mousedown')
-        canvas.addEventListener(evt, e => {
-          saveState();
-          const { x, y } = getCursorPos(e);
-          if (fillMode) {
-            floodFill(x, y);
-          } else {
-            isDrawing = true;
-            drawAt(e);
-          }
-        });
-      else if (evt === 'mousemove')
-        canvas.addEventListener(evt, e => { if (isDrawing) drawAt(e); });
-      else
-        canvas.addEventListener(evt, () => { isDrawing = false; });
+    // Set up drawing and fill event listeners with undo/redo support
+    // On action start, snapshot state for undo/redo
+    canvas.addEventListener('mousedown', e => {
+      saveState();
+      const { x, y } = getCursorPos(e);
+      if (fillMode) {
+        floodFill(x, y);
+        saveState();
+      } else {
+        isDrawing = true;
+        drawAt(e);
+      }
     });
-  
-    ['touchstart','touchmove','touchend','touchcancel'].forEach(evt => {
-      if (evt === 'touchstart')
-        canvas.addEventListener(evt, e => { e.preventDefault(); isDrawing = true; drawAt(e); });
-      else if (evt === 'touchmove')
-        canvas.addEventListener(evt, e => { e.preventDefault(); if (isDrawing) drawAt(e); });
-      else
-        canvas.addEventListener(evt, e => { e.preventDefault(); isDrawing = false; });
+    canvas.addEventListener('mousemove', e => { if (isDrawing) drawAt(e); });
+    canvas.addEventListener('mouseup', () => {
+      if (isDrawing) saveState();
+      isDrawing = false;
     });
+    canvas.addEventListener('mouseleave', () => { if (isDrawing) isDrawing = false; });
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      saveState();
+      const { x, y } = getCursorPos(e);
+      if (fillMode) {
+        floodFill(x, y);
+        saveState();
+      } else {
+        isDrawing = true;
+        drawAt(e);
+      }
+    });
+    canvas.addEventListener('touchmove', e => { e.preventDefault(); if (isDrawing) drawAt(e); });
+    canvas.addEventListener('touchend', e => {
+      e.preventDefault();
+      if (isDrawing) saveState();
+      isDrawing = false;
+    });
+    canvas.addEventListener('touchcancel', e => { e.preventDefault(); if (isDrawing) isDrawing = false; });
   
     function canvasToBMPBase64(cnv) {
       const w = cnv.width, h = cnv.height;
