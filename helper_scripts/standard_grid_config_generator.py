@@ -6,8 +6,8 @@ panel_size = 8
 
 panels = []
 
-for x_index in range(grid_size):
-    for y_index in range(grid_size):
+for x_index in range(grid_size_x):
+    for y_index in range(grid_size_y):
         panel = {
             "b": False,
             "r": False,
