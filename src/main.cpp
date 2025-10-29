@@ -131,7 +131,7 @@ void handlePostBrightness(AsyncWebServerRequest *req, uint8_t *data, size_t len)
 void handlePostImageComplete(AsyncWebServerRequest *req, const String &body)
 {
     // 1. Allocate a JSON document just big enough (with a little wiggle room)
-    size_t capacity = body.length() * 11 / 10 + 512;
+    size_t capacity = body.length() * 15 / 10 + 512;
     DynamicJsonDocument doc(capacity);
 
     // 2. Parse
