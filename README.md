@@ -116,9 +116,10 @@ This should be mostly compatible with WLED-Config.
 ## Usage
 
 1. Copy `config.json` to the root of your SD card.
-2. Insert the SD card into the module.
-3. Install the Project with Platform.io to your ESP.
-4. The firmware will parse hardware settings and Wi‑Fi credentials at startup.
+2. (Optional) put a folder `./images/` at root of Sd card and put your bitmaps `*.bmp` inside. `convert "./input.png" -strip -colorspace sRGB -type TrueColor "BPP24:output-image.bmp"`
+3. Insert the SD card into the Esp-Sd-Cardreader.
+4. Install the Project with Platform.io to your ESP.
+5. The firmware will parse hardware settings and Wi‑Fi credentials at startup.
 
 ## Troubleshooting
 
