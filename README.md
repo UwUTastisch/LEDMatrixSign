@@ -105,7 +105,7 @@ Place a JSON file named `config.json` at the root of your SD card. The file shou
 | `panels[].b`           | Panel enabled (boolean)                      |
 | `panels[].x`, `y`      | Top‑left corner of panel in the virtual grid |
 | `panels[].w`, `h`      | Width and height of each panel in LEDs       |
-| `panels[].r`           | Rotate panel 90° clockwise                   |
+| `panels[].r`           | Flip panel horizontal  (right start led)     |
 | `panels[].v`           | Flip panel vertically                        |
 | `panels[].s`           | Override serpentine wiring                   |
 | `wifi.ssid`            | Wi‑Fi network SSID                           |
