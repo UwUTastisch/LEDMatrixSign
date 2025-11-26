@@ -407,6 +407,10 @@ void setUpAPIServer()
               [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
               {
                   static std::vector<uint8_t> buffer;
+                  if (total > 6966) // this is the size of a 48x48 24bit color bmp as produced by ffmpeg
+                  {
+                      return;
+                  }
                   buffer.resize(total);
                   std::copy(data, data+len, &buffer[index]);
                   if (index+len == total) {
