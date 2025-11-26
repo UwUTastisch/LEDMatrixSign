@@ -3,7 +3,6 @@
 #include <ESPAsyncWebServer.h>
 #include "config.h"
 #include "matrix_driver.h"
-#include "config.h"
 #include "base64.hpp"
 
 // ——— Globals ———
@@ -12,8 +11,8 @@ ConfigReader config;
 MatrixDriver *driver;
 
 // Frame‐chain
-static const uint8_t MAX_CHAIN = 100;                    // TODO: make dynamic by config file
-static const uint16_t MAX_IMG_CHAIN_STRING_LENGTH = 500; // somehow more than 500 characters causes crashes
+static const uint8_t MAX_CHAIN = 100;                      // TODO: make dynamic by config file
+static const uint16_t MAX_IMG_CHAIN_STRING_LENGTH = 10000; // somehow more than 500 characters causes crashes
 String imageChain[MAX_CHAIN];
 uint8_t chainLength = 0;
 uint8_t currentFrame = 0;
@@ -258,39 +257,65 @@ void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
 // GET /api/listimg
 void handleListImages(AsyncWebServerRequest *req)
 {
-    DynamicJsonDocument doc(1024);
-    auto arr = doc.createNestedArray("list");
     File dir = SD.open("/images");
-    File f = dir.openNextFile();
+    if (!dir)
+    {
+        req->send(500, "application/json", "{\"error\":\"failed to open /images\"}");
+        return;
+    }
+
     String containsFilter = "";
     if (req->hasParam("contains"))
     {
         containsFilter = req->getParam("contains")->value();
     }
+
     int countTotalLength = 0;
-    String nm;
-    while (f)
+    bool first = true;
+
+    String res;
+    res.reserve(MAX_IMG_CHAIN_STRING_LENGTH + MAX_CHAIN * 4 + 40);
+    res = "{\"list\":[";
+
+    String f = dir.getNextFileName();
+    int i = 0;
+    while (f && f != "")
     {
-        nm = f.name();
-        if (nm.endsWith(".bmp") && (containsFilter.isEmpty() || containsFilter.equals("") || nm.indexOf(containsFilter) != -1))
+        String nm = f;
+        int p = nm.lastIndexOf('/');
+        if (p >= 0)
+            nm = nm.substring(p + 1);
+
+        if (nm.endsWith(".bmp") &&
+            (containsFilter.isEmpty() || nm.indexOf(containsFilter) != -1))
         {
             countTotalLength += nm.length();
             if (countTotalLength > MAX_IMG_CHAIN_STRING_LENGTH)
             {
                 Serial.println("Max image list length reached, stopping");
-                break; // prevent overly large responses
+                break;
             }
-            arr.add(nm.substring(0)); // Include full file name with extension
-            Serial.printf("Found image file: %s (total length so far: %d)\n\r", nm.c_str(), countTotalLength);
-        }
-        nm.clear();
 
-        f.close();
-        f = dir.openNextFile();
+            if (!first)
+            {
+                res += ',';
+            }
+            first = false;
+
+            res += '"';
+            res += nm;
+            res += '"';
+
+            // Serial.printf("Found image file: %s (total length so far: %d)\n", nm.c_str(), countTotalLength);
+        }
+
+        f = dir.getNextFileName();
     }
+
     dir.close();
-    String res;
-    serializeJson(doc, res);
+
+    res += "]}";
+
     req->send(200, "application/json", res);
 }
 
