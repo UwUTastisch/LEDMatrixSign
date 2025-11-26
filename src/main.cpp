@@ -286,8 +286,13 @@ void handleListImages(AsyncWebServerRequest *req)
         if (p >= 0)
             nm = nm.substring(p + 1);
 
-        if (nm.endsWith(".bmp") &&
-            (containsFilter.isEmpty() || nm.indexOf(containsFilter) != -1))
+        String lowerNm = nm + "";
+        nm.trim();
+        lowerNm.toLowerCase();
+        containsFilter.toLowerCase();
+
+        if (lowerNm.endsWith(".bmp") &&
+            (containsFilter.isEmpty() || lowerNm.indexOf(containsFilter) != -1))
         {
             countTotalLength += nm.length();
             if (countTotalLength > MAX_IMG_CHAIN_STRING_LENGTH)
