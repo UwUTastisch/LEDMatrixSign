@@ -12,7 +12,7 @@ ConfigReader config;
 MatrixDriver *driver;
 
 // Frame‐chain
-static const uint8_t MAX_CHAIN = 10;
+static const uint8_t MAX_CHAIN = 100; // TODO: make dynamic by config file
 String imageChain[MAX_CHAIN];
 uint8_t chainLength = 0;
 uint8_t currentFrame = 0;
