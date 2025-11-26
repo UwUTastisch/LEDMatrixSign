@@ -268,12 +268,14 @@ void handleListImages(AsyncWebServerRequest *req)
         containsFilter = req->getParam("contains")->value();
     }
     int countTotalLength = 0;
-    while (f && arr.size())
+    String nm;
+    while (f)
     {
-        String nm = f.name();
-        if (nm.endsWith(".bmp") && (containsFilter.isEmpty() || nm.indexOf(containsFilter) != -1))
+        nm = f.name();
+        if (nm.endsWith(".bmp") && (containsFilter.isEmpty() || containsFilter.equals("") || nm.indexOf(containsFilter) != -1))
         {
-            if (countTotalLength += nm.length() > MAX_IMG_CHAIN_STRING_LENGTH)
+            countTotalLength += nm.length();
+            if (countTotalLength > MAX_IMG_CHAIN_STRING_LENGTH)
             {
                 Serial.println("Max image list length reached, stopping");
                 break; // prevent overly large responses
@@ -281,6 +283,7 @@ void handleListImages(AsyncWebServerRequest *req)
             arr.add(nm.substring(0)); // Include full file name with extension
             Serial.printf("Found image file: %s (total length so far: %d)\n\r", nm.c_str(), countTotalLength);
         }
+        nm.clear();
 
         f.close();
         f = dir.openNextFile();
