@@ -60,6 +60,12 @@ tests = [
         "expected_status": 200
     },
     {
+        "name": "List Images",
+        "method": "GET",
+        "url": f"{base_url}/api/listimg?contains={spiral_image}",
+        "expected_status": 200
+    },
+    {
         "name": "Get Spiral Image",
         "method": "GET",
         "url": f"{base_url}/api/img?file={spiral_image}",

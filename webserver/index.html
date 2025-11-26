@@ -613,22 +613,32 @@
           document.getElementById('filenameInput').value = cleanBase; // Reset to base without number
           document.getElementById('numberSuffix').textContent = newNum + 1;
           alert(`Uploaded successfully: ${json.file}`);
-          loadImageList();
+          loadImageList("");
           
       } catch (error) {
           console.error('Upload error:', error);
           alert(`Upload failed: ${error.message}`);
       }
     });
+
+    const searchBox = document.getElementById('searchBox');
   
-    async function loadImageList() {
+    async function loadImageList(query) {
       try {
-        const res  = await fetch('/api/listimg');
+        var path = query ? `/api/listimg?contains=${query}` : "/api/listimg";
+        const res  = await fetch(path);
         const json = await res.json();
         images = json.list;
         renderImageList();
       } catch (e) { /* ignore */ }
     }
+
+    searchBox.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          const query = searchBox.value.trim();
+          loadImageList(query);
+        }
+      });
   
     function renderImageList(filter = '') {
       const list = document.getElementById('imageList');

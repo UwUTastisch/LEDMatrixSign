@@ -12,7 +12,8 @@ ConfigReader config;
 MatrixDriver *driver;
 
 // Frame‐chain
-static const uint8_t MAX_CHAIN = 100; // TODO: make dynamic by config file
+static const uint8_t MAX_CHAIN = 100;                    // TODO: make dynamic by config file
+static const uint16_t MAX_IMG_CHAIN_STRING_LENGTH = 500; // somehow more than 500 characters causes crashes
 String imageChain[MAX_CHAIN];
 uint8_t chainLength = 0;
 uint8_t currentFrame = 0;
@@ -261,13 +262,26 @@ void handleListImages(AsyncWebServerRequest *req)
     auto arr = doc.createNestedArray("list");
     File dir = SD.open("/images");
     File f = dir.openNextFile();
-    while (f)
+    String containsFilter = "";
+    if (req->hasParam("contains"))
+    {
+        containsFilter = req->getParam("contains")->value();
+    }
+    int countTotalLength = 0;
+    while (f && arr.size())
     {
         String nm = f.name();
-        if (nm.endsWith(".bmp"))
+        if (nm.endsWith(".bmp") && (containsFilter.isEmpty() || nm.indexOf(containsFilter) != -1))
         {
+            if (countTotalLength += nm.length() > MAX_IMG_CHAIN_STRING_LENGTH)
+            {
+                Serial.println("Max image list length reached, stopping");
+                break; // prevent overly large responses
+            }
             arr.add(nm.substring(0)); // Include full file name with extension
+            Serial.printf("Found image file: %s (total length so far: %d)\n\r", nm.c_str(), countTotalLength);
         }
+
         f.close();
         f = dir.openNextFile();
     }
