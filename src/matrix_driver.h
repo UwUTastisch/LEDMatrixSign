@@ -119,14 +119,8 @@ public:
     }
 
     // Draw a 24-bpp BMP onto the matrix with general nearest-neighbor scaling
-    bool drawBMP(const char *filename)
+    bool drawBMP(File f)
     {
-        File f = SD.open(filename, FILE_READ);
-        if (!f)
-        {
-            Serial.printf("❌ Open BMP %s failed\n", filename);
-            return false;
-        }
         // — Header check —
         if (f.read() != 'B' || f.read() != 'M')
         {
@@ -219,6 +213,18 @@ public:
         // strip.setBrightness(brightness); // Ensure current brightness is applied
         strip.show();
         return true;
+    }
+
+    // Draw a 24-bpp BMP onto the matrix with general nearest-neighbor scaling
+    bool drawBMP(const char *filename)
+    {
+        File f = SD.open(filename, FILE_READ);
+        if (!f)
+        {
+            Serial.printf("❌ Open BMP %s failed\n", filename);
+            return false;
+        }
+        return drawBMP(f);
     }
 
     // Call this once you’ve filled the strip (e.g. after drawPNG() or show())

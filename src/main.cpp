@@ -4,6 +4,9 @@
 #include "config.h"
 #include "matrix_driver.h"
 #include "base64.hpp"
+#include <vector>
+#include <span>
+#include "virtual_file.h"
 
 // ——— Globals ———
 AsyncWebServer server(80);
@@ -398,6 +401,19 @@ void setUpAPIServer()
         {
             handlePostImageComplete(req, bodyBuffer);
         } });
+    server.on("/api/display", HTTP_POST,
+              [](AsyncWebServerRequest *request) {},
+              nullptr,
+              [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              {
+                  static std::vector<uint8_t> buffer;
+                  buffer.resize(total);
+                  std::copy(data, data+len, &buffer[index]);
+                  if (index+len == total) {
+                      driver->drawBMP(make_virtual_file(buffer));
+                      buffer.clear();
+                  }
+              });
     server.on("/api/imgchain", HTTP_POST, [](AsyncWebServerRequest *request)
               {
                   // Handle pre-processing if needed
