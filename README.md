@@ -105,7 +105,7 @@ Place a JSON file named `config.json` at the root of your SD card. The file shou
 | `panels[].b`           | Panel enabled (boolean)                      |
 | `panels[].x`, `y`      | Top‑left corner of panel in the virtual grid |
 | `panels[].w`, `h`      | Width and height of each panel in LEDs       |
-| `panels[].r`           | Rotate panel 90° clockwise                   |
+| `panels[].r`           | Flip panel horizontal  (right start led)     |
 | `panels[].v`           | Flip panel vertically                        |
 | `panels[].s`           | Override serpentine wiring                   |
 | `wifi.ssid`            | Wi‑Fi network SSID                           |
@@ -116,9 +116,10 @@ This should be mostly compatible with WLED-Config.
 ## Usage
 
 1. Copy `config.json` to the root of your SD card.
-2. Insert the SD card into the module.
-3. Install the Project with Platform.io to your ESP.
-4. The firmware will parse hardware settings and Wi‑Fi credentials at startup.
+2. (Optional) put a folder `./images/` at root of Sd card and put your bitmaps `*.bmp` inside. `convert "./input.png" -strip -colorspace sRGB -type TrueColor "BPP24:output-image.bmp"`
+3. Insert the SD card into the Esp-Sd-Cardreader.
+4. Install the Project with Platform.io to your ESP.
+5. The firmware will parse hardware settings and Wi‑Fi credentials at startup.
 
 ## Troubleshooting
 
