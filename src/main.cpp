@@ -5,7 +5,6 @@
 #include "matrix_driver.h"
 #include "base64.hpp"
 #include <vector>
-#include <span>
 #include "virtual_file.h"
 
 // ——— Globals ———
@@ -412,10 +411,11 @@ void setUpAPIServer()
                       return;
                   }
                   buffer.resize(total);
-                  std::copy(data, data+len, &buffer[index]);
+                  std::copy_n(data, len, buffer.data()+index);
                   if (index+len == total) {
-                      driver->drawBMP(make_virtual_file(buffer));
+                      driver->drawBMP(make_virtual_file(buffer.data(), buffer.size()));
                       buffer.clear();
+                      request->send(204);
                   }
               });
     server.on("/api/imgchain", HTTP_POST, [](AsyncWebServerRequest *request)

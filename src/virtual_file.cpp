@@ -4,18 +4,20 @@
 
 class virtual_file : public fs::FileImpl {
 private:
-    std::span<uint8_t> _buf;
+    uint8_t *_buf;
+    size_t _len;
     size_t _pos;
 public:
-    virtual_file(std::span<uint8_t> buf): _buf(buf), _pos(0) {}
+    virtual_file(uint8_t *buf, size_t len): _buf(buf), _len(len), _pos(0) {}
     virtual size_t write(const uint8_t *buf, size_t size) override
     {
         return 0;
     }
     virtual size_t read(uint8_t *buf, size_t size) override
     {
-        size_t nbytes = _pos - std::min(_pos+size, _buf.size());
-        std::copy(&_buf[_pos], &_buf[_pos+nbytes], buf);
+        size_t nbytes = std::min(_pos+size, _len) - _pos;
+        std::copy_n(_buf+_pos, nbytes, buf);
+        _pos += nbytes;
         return nbytes;
     }
     virtual void flush() override {}
@@ -31,10 +33,10 @@ public:
                 npos = _pos + pos;
                 break;
             case SeekEnd:
-                npos = _buf.size() + pos;
+                npos = _len + pos;
                 break;
         }
-        if (npos >= 0 && npos < _buf.size())
+        if (npos >= 0 && npos < _len)
         {
             _pos = npos;
             return true;
@@ -50,7 +52,7 @@ public:
     }
     virtual size_t size() const override
     {
-        return _buf.size();
+        return _len;
     }
     virtual bool setBufferSize(size_t size) override
     {
@@ -94,7 +96,7 @@ public:
     }
 };
 
-File make_virtual_file(std::span<uint8_t> buf)
+File make_virtual_file(uint8_t *buf, size_t len)
 {
-    return File(std::make_shared<virtual_file>(buf));
+    return File(std::make_shared<virtual_file>(buf, len));
 }

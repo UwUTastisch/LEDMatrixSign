@@ -1,4 +1,3 @@
-#include <span>
 #include <FS.h>
 
-File make_virtual_file(std::span<uint8_t> buf);
+File make_virtual_file(uint8_t *buf, size_t len);
