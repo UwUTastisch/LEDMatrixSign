@@ -4,6 +4,8 @@
 #include "config.h"
 #include "matrix_driver.h"
 #include "base64.hpp"
+#include <vector>
+#include "virtual_file.h"
 
 // ——— Globals ———
 AsyncWebServer server(80);
@@ -481,6 +483,24 @@ void setUpAPIServer()
         {
             handlePostImageComplete(req, bodyBuffer);
         } });
+    server.on("/api/display", HTTP_POST,
+              [](AsyncWebServerRequest *request) {},
+              nullptr,
+              [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+              {
+                  static std::vector<uint8_t> buffer;
+                  if (total > 6966) // this is the size of a 48x48 24bit color bmp as produced by ffmpeg
+                  {
+                      return;
+                  }
+                  buffer.resize(total);
+                  std::copy_n(data, len, buffer.data()+index);
+                  if (index+len == total) {
+                      driver->drawBMP(make_virtual_file(buffer.data(), buffer.size()));
+                      buffer.clear();
+                      request->send(204);
+                  }
+              });
     server.on("/api/imgchain", HTTP_GET, handleGetImgChain);
     server.on("/api/imgchain", HTTP_POST, [](AsyncWebServerRequest *request)
               {
