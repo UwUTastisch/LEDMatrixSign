@@ -5,7 +5,6 @@
 #include "matrix_driver.h"
 #include "base64.hpp"
 #include <vector>
-#include "virtual_file.h"
 #include <SD.h>
 #include <WiFi.h>
 
@@ -499,7 +498,7 @@ void setUpAPIServer()
                   buffer.resize(total);
                   std::copy_n(data, len, buffer.data()+index);
                   if (index+len == total) {
-                      driver->drawBMP(make_virtual_file(buffer.data(), buffer.size()));
+                      driver->drawBMP(buffer.data(), buffer.size());
                       buffer.clear();
                       request->send(204);
                   }

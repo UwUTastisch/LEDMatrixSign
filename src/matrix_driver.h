@@ -28,7 +28,7 @@ public:
     static uint32_t read32(File &f);
 
     // Draw a 24-bpp BMP onto the matrix with general nearest-neighbor scaling
-    bool drawBMP(File f);
+    bool drawBMP(uint8_t *buf, size_t len);
 
     // Draw a 24-bpp BMP onto the matrix with general nearest-neighbor scaling
     bool drawBMP(const char *filename);

@@ -1,11 +1,7 @@
-// matrix_driver.h
-#pragma once
-
 #include "matrix_driver.h"
 #include <SPI.h>
 #include <SD.h>
 #include <algorithm>
-
 
 MatrixDriver::MatrixDriver(ConfigReader &c)
     : cfg(c), strip(c.stripLen, c.pin, NEO_GRB + NEO_KHZ800) {}
@@ -107,95 +103,90 @@ uint32_t MatrixDriver::read32(File &f)
     return b0 | b1 | b2 | b3;
 }
 
-// Draw a 24-bpp BMP onto the matrix with general nearest-neighbor scaling
-bool MatrixDriver::drawBMP(File f)
+bool MatrixDriver::drawBMP(uint8_t *buf, size_t len)
 {
-    // — Header check —
-    if (f.read() != 'B' || f.read() != 'M')
+    struct [[gnu::packed]] BmpFileHeader {
+        uint16_t type;
+        uint32_t fileSize;
+        uint16_t reserved1;
+        uint16_t reserved2;
+        uint32_t offset;
+    };
+
+    struct BmpInfoHeader {
+        uint32_t size;
+        int32_t width;
+        int32_t height;
+        uint16_t planes;
+        uint16_t bitCount;
+        uint32_t compression;
+        // we don't care about the rest of the header
+    };
+
+    struct Pixel {
+        uint8_t g;
+        uint8_t b;
+        uint8_t r;
+    };
+
+    if (len < sizeof(BmpFileHeader) + sizeof(BmpInfoHeader)) {
+        Serial.println("❌ Not big enough for BMP header");
+        return false;
+    }
+    BmpFileHeader &fileHeader = *(BmpFileHeader*)buf;
+    if (fileHeader.type != ('B' | 'M' << 8))
     {
         Serial.println("❌ Not a BMP");
-        f.close();
         return false;
     }
-    f.seek(10);
-    uint32_t dataOffset = read32(f);
-    uint32_t dibSize = read32(f);
-    if (dibSize < 40)
+    BmpInfoHeader &infoHeader = *(BmpInfoHeader*)(buf + sizeof(BmpFileHeader));
+    if (infoHeader.size < sizeof(BmpInfoHeader))
     {
         Serial.println("❌ Unsupported BMP header");
-        f.close();
         return false;
     }
-    int32_t bmpW = int32_t(read32(f));
-    int32_t bmpH = int32_t(read32(f));
-    f.seek(2, SeekCur);
-    uint16_t bpp = f.read() | (f.read() << 8);
-    if (bpp != 24)
+    if (infoHeader.bitCount != 24)
     {
-        Serial.printf("❌ Only 24-bpp BMP (got %u)\n", bpp);
-        f.close();
+        Serial.printf("❌ Only 24-bpp BMP (got %u)\n", infoHeader.bitCount);
         return false;
     }
-    if (read32(f) != 0)
+    if (infoHeader.compression != 0)
     {
         Serial.println("❌ Compressed BMP not supported");
-        f.close();
+        return false;
+    }
+    size_t rowLen = ((uint32_t(infoHeader.width) * 3 + 3) & ~3);
+    if (len < fileHeader.offset + rowLen*infoHeader.height)
+    {
+        Serial.println("❌ Missing image data");
         return false;
     }
 
-    // — Prep for scaling —
-    int absH = abs(bmpH);
-    // rowSize padded to 4-byte boundary:
-    uint32_t rowSize = ((uint32_t(bmpW) * 3 + 3) & ~3);
+    uint32_t absH = std::abs(infoHeader.height);
 
-    // buffer one source row of pixels
-    struct Pixel
-    {
-        uint8_t r, g, b;
-    };
-    Pixel *rowBuf = (Pixel *)malloc(sizeof(Pixel) * bmpW);
-    if (!rowBuf)
-    {
-        Serial.println("❌ Out of memory");
-        f.close();
-        return false;
-    }
-
-    // clear your matrix
     strip.clear();
 
     // Precompute ratios:
-    float fy = float(absH) / float(cfg.height);
-    float fx = float(bmpW) / float(cfg.width);
+    float fy = (float)absH / (float)cfg.height;
+    float fx = (float)infoHeader.width / (float)cfg.width;
 
     // For each destination row
     for (int y = 0; y < cfg.height; y++)
     {
         // map to source row (nearest-neighbor)
-        int srcRow = std::min(int(y * fy), absH - 1);
+        uint32_t srcRow = std::min((uint32_t)(y * fy), absH - 1);
         // account for BMP’s bottom-up storage if bmpH>0
-        int bmpRow = (bmpH > 0) ? (absH - 1 - srcRow) : srcRow;
+        uint32_t bmpRow = (infoHeader.height > 0) ? (absH - 1 - srcRow) : srcRow;
         // seek & read that one row
-        f.seek(dataOffset + uint32_t(bmpRow) * rowSize);
-        for (int x = 0; x < bmpW; x++)
+        Pixel *pixelRow = (Pixel*)(buf + fileHeader.offset + bmpRow*rowLen);
+        for (int x = 0; x < infoHeader.width; x++)
         {
-            uint8_t bb = f.read();
-            uint8_t gg = f.read();
-            uint8_t rr = f.read();
-            rowBuf[x] = {rr, gg, bb};
-        }
-
-        // now map each destination X → srcCol, and setPixel
-        for (int x = 0; x < cfg.width; x++)
-        {
-            int srcCol = std::min((long)(x * fx), bmpW - 1);
-            auto &p = rowBuf[srcCol];
-            setPixel(x, y, p.r, p.g, p.b);
+            uint32_t srcCol = std::min((long)(x * fx), infoHeader.width - 1);
+            Pixel &pixel = pixelRow[x];
+            setPixel(x, y, pixel.r, pixel.g, pixel.b);
         }
     }
 
-    free(rowBuf);
-    f.close();
 #if DEBUG_MATRIX
     debugPrintMatrix();
 #endif
@@ -214,7 +205,11 @@ bool MatrixDriver::drawBMP(const char *filename)
         Serial.printf("❌ Open BMP %s failed\n", filename);
         return false;
     }
-    return drawBMP(f);
+    std::vector<uint8_t> buf(f.size());
+    f.read(buf.data(), buf.size());
+    bool ret = drawBMP(buf.data(), buf.size());
+    f.close();
+    return ret;
 }
 
 // Call this once you’ve filled the strip (e.g. after drawPNG() or show())
