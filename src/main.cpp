@@ -21,36 +21,6 @@ uint8_t currentFrame = 0;
 uint16_t frameDuration = 1000 / 24; // default 24 FPS
 unsigned long lastUpdate = 0;
 
-// ——— Helpers ———
-String generateNewID()
-{
-    static uint32_t counter = 0;
-    File cf = SD.open("/metadata/counter", FILE_READ);
-    if (cf)
-    {
-        counter = cf.parseInt();
-        cf.close();
-    }
-    counter++;
-    cf = SD.open("/metadata/counter", FILE_WRITE);
-    if (cf)
-    {
-        cf.print(counter);
-        cf.close();
-    }
-    return String(counter);
-}
-
-String readUID(const String &id)
-{
-    File uf = SD.open("/metadata/" + id + ".uid");
-    if (!uf)
-        return String();
-    String u = uf.readString();
-    uf.close();
-    return u;
-}
-
 // ——— Helper to slurp a file into a byte buffer ———
 bool readFileToBuffer(const String &path, std::vector<uint8_t> &outBuf)
 {
@@ -182,7 +152,7 @@ void handlePostImageComplete(AsyncWebServerRequest *req, const String &body)
     req->send(200, "application/json", resp);
 }
 
-// POST /api/imgchain { "chain":["1","2",…], "fps":12.5 }
+// POST /api/imgchain { "chain":["1","2",…], "fps":12.5, ?"num":1 }
 void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
 {
     DynamicJsonDocument doc(2 * 1024);
@@ -253,10 +223,118 @@ void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
         driver->drawBMP(p.c_str());
     }
 
-    req->send(200, "application/json", "{\"status\":\"ok\"}");
+    int chainNum = -1;
+
+    if (doc.containsKey("num"))
+    {
+        chainNum = doc["num"].as<int>();
+    }
+    else
+    {
+        // Store as csv in /imgchain/<number>.chain as: "frame_duration"\n"frame1.bmp"\n"frame2.bmp"\n…
+        File dir = SD.open("/imgchain");
+
+        String nm = dir.getNextFileName();
+        int maxNum = 0;
+
+        while (nm && nm != "")
+        {
+            String lowerNm = nm + "";
+            lowerNm.toLowerCase();
+            if (lowerNm.endsWith(".chain"))
+            {
+                String base = lowerNm.substring(0, lowerNm.lastIndexOf('.'));
+                int num = base.toInt();
+                if (num > maxNum)
+                    maxNum = num;
+            }
+            nm = dir.getNextFileName();
+        }
+        dir.close();
+        chainNum = maxNum + 1;
+    }
+
+    String chainPath = "/imgchain/" + String(chainNum) + ".chain";
+
+    if (SD.exists(chainPath))
+    {
+        SD.rename(chainPath, chainPath + ".bak");
+    }
+
+    File f = SD.open(chainPath, FILE_WRITE);
+    if (!f)
+    {
+        req->send(500, "application/json", "{\"error\":\"fs write chain\"}");
+        return;
+    }
+    f.printf("%u\n", frameDuration);
+    for (uint8_t i = 0; i < chainLength; i++)
+    {
+        f.printf("%s\n", imageChain[i].c_str());
+    }
+
+    f.close();
+
+    req->send(200, "application/json", "{\"status\":\"ok\", \"chainNum\":\"" + String(chainNum) + "\"}");
 }
 
-// GET /api/listimg
+// POST /api/imgchain?num=<NUMBER> // this returns the file content list -> { "chain":["1","2",…], "fps":12.5, "num":1 }
+void handleGetImgChain(AsyncWebServerRequest *req)
+{
+    if (!req->hasParam("num"))
+    {
+        req->send(400, "application/json", "{\"error\":\"missing num\"}");
+        return;
+    }
+    String numStr = req->getParam("num")->value();
+    String path = "/imgchain/" + numStr + ".chain";
+
+    if (!SD.exists(path))
+    {
+        req->send(404, "application/json", "{\"error\":\"not found\"}");
+        return;
+    }
+
+    File f = SD.open(path, FILE_READ);
+    if (!f)
+    {
+        req->send(500, "application/json", "{\"error\":\"fs read chain\"}");
+        return;
+    }
+
+    // Read first line: frameDuration
+    String line = f.readStringUntil('\n');
+    line.trim();
+    uint16_t duration = line.toInt();
+    float fps = duration > 0 ? 1000.0f / duration : 1.0f;
+
+    // Read rest: image filenames
+    DynamicJsonDocument doc(2048);
+    JsonArray arr = doc.createNestedArray("chain");
+    while (f.available())
+    {
+        String img = f.readStringUntil('\n');
+        img.trim();
+        if (img.length() > 0)
+        {
+            // Add ".bmp" if not present
+            if (!img.endsWith(".bmp"))
+                img += ".bmp";
+            arr.add(img);
+        }
+    }
+    f.close();
+
+    doc["fps"] = fps;
+    doc["num"] = numStr.toInt();
+
+    String res;
+    serializeJson(doc, res);
+
+    req->send(200, "text/plain", res);
+}
+
+// GET /api/listimg?contains=<FILTER>
 void handleListImages(AsyncWebServerRequest *req)
 {
     File dir = SD.open("/images");
@@ -288,8 +366,13 @@ void handleListImages(AsyncWebServerRequest *req)
         if (p >= 0)
             nm = nm.substring(p + 1);
 
-        if (nm.endsWith(".bmp") &&
-            (containsFilter.isEmpty() || nm.indexOf(containsFilter) != -1))
+        String lowerNm = nm + "";
+        nm.trim();
+        lowerNm.toLowerCase();
+        containsFilter.toLowerCase();
+
+        if (lowerNm.endsWith(".bmp") &&
+            (containsFilter.isEmpty() || lowerNm.indexOf(containsFilter) != -1))
         {
             countTotalLength += nm.length();
             if (countTotalLength > MAX_IMG_CHAIN_STRING_LENGTH)
@@ -418,6 +501,7 @@ void setUpAPIServer()
                       request->send(204);
                   }
               });
+    server.on("/api/imgchain", HTTP_GET, handleGetImgChain);
     server.on("/api/imgchain", HTTP_POST, [](AsyncWebServerRequest *request)
               {
                   // Handle pre-processing if needed
@@ -459,8 +543,8 @@ void setup()
     driver->begin();
     if (!SD.exists("/images"))
         SD.mkdir("/images");
-    if (!SD.exists("/metadata"))
-        SD.mkdir("/metadata");
+    if (!SD.exists("/imgchain"))
+        SD.mkdir("/imgchain");
 
     setUpAPIServer();
 }

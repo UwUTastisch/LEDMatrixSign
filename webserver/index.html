@@ -171,6 +171,11 @@
               <input type="number" id="durationInput" value="1000" step="100" min="1">
             </label>
             <button id="toggleModeBtn">Use Duration</button>
+            <br>
+            <label id="chainNumLabel">SaveNum:
+              <input type="number" id="chainNumInput" value="-1" step="1" min="-1">
+            </label>
+            <button id="loadChainBtn">Load Chain</button>
         </div>
         <button id="startChainBtn">Start</button>
         <button id="clearChainBtn">Clear</button>
@@ -702,13 +707,27 @@
       toggleModeBtn.textContent   = useDurationMode ? 'Use FPS' : 'Use Duration';
     });
   
-    async function addToChain(name) {
-      try {
-        const res  = await fetch(`/api/img?file=${encodeURIComponent(name)}`);
-        const json = await res.json();
-        chain.push({ name, src: `data:image/bmp;base64,${json.img}` });
-        updateChainUI();
-      } catch (e) { /* ignore */ }
+    function addToChain(name) {
+      //const res  = await fetch(`/api/img?file=${encodeURIComponent(name)}`);
+      //const json = await res.json();
+      //chain.push({ name, src: `data:image/bmp;base64,${json.img}` });
+      chain.push({name, src: `loading` });
+      updateChainUI();
+
+      
+      fetch(`/api/img?file=${encodeURIComponent(name)}`)
+        .then(res => res.json())
+        .then(json => {
+          // Find the just-added placeholder and update its src
+          const idx = chain.findIndex(item => item.name === name && item.src === "loading");
+          if (idx !== -1) {
+            chain[idx].src = `data:image/bmp;base64,${json.img}`;
+            updateChainUI();
+          }
+        })
+        .catch(() => {/* ignore errors */});
+    
+     
     }
   
     function updateChainUI() {
@@ -731,35 +750,80 @@
       });
     }
   
+    document.getElementById('loadChainBtn').addEventListener('click', () => {
+        try {
+          let num = -1;
+          const chainNumInput = document.getElementById('chainNumInput');
+          if (!(chainNumInput.value && chainNumInput.value > 0)) {
+            alert("Type a chain-number first, to load the chain.")
+            return;
+          }
+
+          num = chainNumInput.value;
+          
+          fetch(`/api/imgchain?num=${num}`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            })
+            .then(res => res.json())
+            .then(json => {
+              // json is expected to be like: {"chain": ["test2.bmp"], "fps": 5.0, "num": 20}
+              if (!json.chain || !Array.isArray(json.chain)) {
+                alert('Invalid chain data');
+                return;
+              }
+              // Clear current chain
+              json.chain.forEach(element => {
+                addToChain(element);
+              });
+              alert("Loaded Successful")
+            })
+        } catch {
+          alert('Failed to load img chain');
+        }
+      });
+
     document.getElementById('clearChainBtn').addEventListener('click', () => {
       chain = [];
       updateChainUI();
+      document.getElementById('chainNumInput').value = -1;
     });
   
     document.getElementById('startChainBtn').addEventListener('click', async () => {
       if (!chain.length) return alert('Add images first');
       const names = chain.map(c => c.name);
       let payload;
-  
+      let fps;
+      
       if (useDurationMode) {
         const totalMs = parseFloat(durationInput.value);
         if (isNaN(totalMs) || totalMs <= 0) {
           return alert('Enter a valid total duration');
         }
-        const fps = chain.length / (totalMs / 1000);
-        payload = { chain: names, fps: fps };
+        fps = parseFloat(chain.length) / (parseFloat(totalMs) / 1000.0);
       } else {
-        const fps = parseFloat(fpsInput.value) || 1.0;
+        fps = parseFloat(fpsInput.value);
+      }
+      
+      const chainNumInput =  document.getElementById('chainNumInput');
+      if (chainNumInput.value && chainNumInput.value >0) {
+        payload = { chain: names, fps: fps, num: parseInt(chainNumInput.value,10) };
+      } else {
         payload = { chain: names, fps: fps };
       }
-  
+
       try {
-        await fetch('/api/imgchain', {
+        const res = await fetch('/api/imgchain', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
-        });
-        alert('Animation started');
+        })
+        const json = await res.json();
+        
+        const chainNum = json.chainNum;
+        chainNumInput.value = parseInt(chainNum, 10);
+        
+        alert('Animation started!\n And stored as number: ' + chainNum);
       } catch {
         alert('Failed to start');
       }

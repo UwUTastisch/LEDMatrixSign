@@ -82,6 +82,23 @@ tests = [
         "expected_status": 200
     },
     {
+        "name": "Create Image Chain with Num",
+        "method": "POST",
+        "url": f"{base_url}/api/imgchain",
+        "json": {
+            "chain": [spiral_image, spiral_image],
+            "fps": 12,
+            "num": 0
+        },
+        "expected_status": 200
+    },
+    {
+        "name": "Get Image Chain",
+        "method": "GET",
+        "url": f"{base_url}/api/imgchain?num=0",
+        "expected_status": 200
+    },
+    {
         "name": "Get Index Page",
         "method": "GET",
         "url": f"{base_url}/index.html",
