@@ -6,11 +6,14 @@
 #include "base64.hpp"
 #include <vector>
 #include "virtual_file.h"
+#include <SD.h>
+#include <WiFi.h>
 
 // ——— Globals ———
 AsyncWebServer server(80);
 ConfigReader config;
 MatrixDriver *driver;
+DNSServer dnsServer;
 
 // Frame‐chain
 static const uint8_t MAX_CHAIN = 100;                      // TODO: make dynamic by config file
@@ -527,7 +530,7 @@ void setup()
         for (;;)
             delay(1000);
     }
-    config.beginWiFi();
+    config.beginWiFi(dnsServer);
 
     // Check if we are connected to Wi-Fi
     if (WiFi.status() != WL_CONNECTED)
