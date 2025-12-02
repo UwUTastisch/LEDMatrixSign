@@ -5,12 +5,14 @@
 #include "matrix_driver.h"
 #include "base64.hpp"
 #include <vector>
-#include "virtual_file.h"
+#include <SD.h>
+#include <WiFi.h>
 
 // ——— Globals ———
 AsyncWebServer server(80);
 ConfigReader config;
 MatrixDriver *driver;
+DNSServer dnsServer;
 
 // Frame‐chain
 static const uint8_t MAX_CHAIN = 100;                      // TODO: make dynamic by config file
@@ -521,7 +523,7 @@ void setUpAPIServer()
                   buffer.resize(total);
                   std::copy_n(data, len, buffer.data()+index);
                   if (index+len == total) {
-                      driver->drawBMP(make_virtual_file(buffer.data(), buffer.size()));
+                      driver->drawBMP(buffer.data(), buffer.size());
                       buffer.clear();
                       request->send(204);
                   } });
@@ -559,7 +561,7 @@ void setup()
         for (;;)
             delay(1000);
     }
-    config.beginWiFi();
+    config.beginWiFi(dnsServer);
 
     // Check if we are connected to Wi-Fi
     if (WiFi.status() != WL_CONNECTED)
