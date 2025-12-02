@@ -155,12 +155,23 @@ void handlePostImageComplete(AsyncWebServerRequest *req, const String &body)
 // POST /api/imgchain { "chain":["1","2",…], "fps":12.5, ?"num":1 }
 void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
 {
-    DynamicJsonDocument doc(2 * 1024);
-    if (deserializeJson(doc, data, len))
+    const String &body = String((const char *)data, len);
+#if DEBUG
+    Serial.printf("Received imgchain POST: %s\n", body.c_str());
+#endif
+
+    JsonDocument doc;
+    if (deserializeJson(doc, body))
     {
         req->send(400, "application/json", "{\"error\":\"bad json\"}");
         return;
     }
+
+#if DEBUG
+    Serial.println("Parsed JSON:");
+    serializeJsonPretty(doc, Serial);
+    Serial.println();
+#endif
 
     if (!doc.containsKey("chain") || !doc["chain"].is<JsonArray>())
     {
@@ -174,28 +185,37 @@ void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
         return;
     }
 
+#if DEBUG
+    Serial.println("Cleared old image chain");
+#endif
+
     // Clear out any old entries
     for (uint8_t i = 0; i < MAX_CHAIN; i++)
     {
         imageChain[i].clear();
     }
-
-    // Fill in the new chain, up to MAX_CHAIN
     chainLength = 0;
+
     for (uint8_t i = 0; i < arr.size() && i < MAX_CHAIN; i++)
     {
         String fn = arr[i].as<String>();
         String path = "/images/" + fn;
+        /* //Future: re-enable file existence check (thats faster and not blocking!)
         if (!SD.exists(path))
         {
             req->send(404, "application/json",
                       "{\"error\":\"file not found: " + fn + "\"}");
             return;
-        }
+        }*/
         // strip “.bmp” so we can re‐add it later in loop()
         imageChain[i] = fn.substring(0, fn.lastIndexOf('.'));
         chainLength++;
+        Serial.printf("Added to chain[%u]: %s\n", i, imageChain[i].c_str());
     }
+
+#if DEBUG
+    Serial.printf("Received chain of %u images\n", arr.size());
+#endif
 
     // Compute our per‐frame delay
     float fps = doc["fps"].is<float>() ? doc["fps"].as<float>() : 1.0;
@@ -206,11 +226,11 @@ void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
     }
     frameDuration = static_cast<uint16_t>(1000.0 / fps);
 
-#ifdef DEBUG
+    // #ifdef DEBUG
     Serial.printf("FPS as String: %s\n", doc["fps"].as<String>().c_str());
     Serial.printf("FPS: %.2f\n", fps);
     Serial.printf("frameDuration: %u ms\n", frameDuration);
-#endif
+    // #endif
 
     // Reset playback
     currentFrame = 0;
@@ -241,6 +261,10 @@ void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
         {
             String lowerNm = nm + "";
             lowerNm.toLowerCase();
+            // #ifdef DEBUG
+            Serial.printf("Checking existing chain file: %s\n", lowerNm.c_str());
+            // #endif
+
             if (lowerNm.endsWith(".chain"))
             {
                 String base = lowerNm.substring(0, lowerNm.lastIndexOf('.'));
@@ -250,6 +274,10 @@ void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
             }
             nm = dir.getNextFileName();
         }
+
+#if DEBUG
+        Serial.printf("Max existing chain number: %d\n", maxNum);
+#endif
         dir.close();
         chainNum = maxNum + 1;
     }
@@ -278,7 +306,7 @@ void handlePostImgChain(AsyncWebServerRequest *req, uint8_t *data, size_t len)
     req->send(200, "application/json", "{\"status\":\"ok\", \"chainNum\":\"" + String(chainNum) + "\"}");
 }
 
-// POST /api/imgchain?num=<NUMBER> // this returns the file content list -> { "chain":["1","2",…], "fps":12.5, "num":1 }
+// get /api/imgchain?num=<NUMBER> // this returns the file content list -> { "chain":["1","2",…], "fps":12.5, "num":1 }
 void handleGetImgChain(AsyncWebServerRequest *req)
 {
     if (!req->hasParam("num"))
@@ -483,10 +511,7 @@ void setUpAPIServer()
         {
             handlePostImageComplete(req, bodyBuffer);
         } });
-    server.on("/api/display", HTTP_POST,
-              [](AsyncWebServerRequest *request) {},
-              nullptr,
-              [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+    server.on("/api/display", HTTP_POST, [](AsyncWebServerRequest *request) {}, nullptr, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
               {
                   static std::vector<uint8_t> buffer;
                   if (total > 6966) // this is the size of a 48x48 24bit color bmp as produced by ffmpeg
@@ -499,16 +524,23 @@ void setUpAPIServer()
                       driver->drawBMP(make_virtual_file(buffer.data(), buffer.size()));
                       buffer.clear();
                       request->send(204);
-                  }
-              });
+                  } });
     server.on("/api/imgchain", HTTP_GET, handleGetImgChain);
-    server.on("/api/imgchain", HTTP_POST, [](AsyncWebServerRequest *request)
+    server.on("/api/imgchain", HTTP_POST, [](AsyncWebServerRequest *request) {}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
               {
-                  // Handle pre-processing if needed
-              },
-              NULL, // No upload handler
-              [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
-              { handlePostImgChain(request, data, len); });
+            static std::vector<uint8_t> bodyBuffer;
+            if (index == 0) {
+                bodyBuffer.clear();
+                bodyBuffer.reserve(total);
+            }
+            // Append this chunk
+            bodyBuffer.insert(bodyBuffer.end(), data, data + len);
+
+            // If this is the last chunk…
+            if (index + len == total) {
+                handlePostImgChain(request, bodyBuffer.data(), bodyBuffer.size());
+                bodyBuffer.clear();
+            } });
     server.on("/api/listimg", HTTP_GET, handleListImages);
     server.on("/api/imgspec", HTTP_GET, handleGetSpec);
     server.on("/", HTTP_GET, handleGetIndex);
