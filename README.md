@@ -38,7 +38,7 @@ GPIO19 (MISO) MISO  (optional)
 GPIO<order>  WS2812B   (configured pin in JSON)
 ```
 
-> Adjust pins in the JSON under `hw.led.ins[0].pin[0]` and `hw.led.ins[0].pin[1]` as needed.
+> Adjust pins in the JSON under `hw.led.ins[0].pin[0]` and `hw.led.ins[0].pin[1]` as needed. Otherwise you wont se an image
 
 ## Configuration File (`/config.json`)
 
@@ -88,34 +88,40 @@ Place a JSON file named `config.json` at the root of your SD card. The file shou
   "wifi": {
     "ssid": "YourNetworkSSID",
     "password": "YourNetworkPassword"
+  },
+  "ap": {
+    "ssid": "ESP32_AP_1",
+    "password": "test123"
   }
 }
 ```
 
-| Key                    | Description                                  |
-| ---------------------- | -------------------------------------------- |
-| `hw.led.total`         | Total number of LEDs across all panels       |
-| `hw.led.ins[].start`   | Starting LED index for this input segment    |
-| `hw.led.ins[].len`     | Number of LEDs in this segment               |
-| `hw.led.ins[].skip`    | Number of LEDs to skip at the start          |
-| `hw.led.ins[].pin`     | SPI / data pin number(s)                     |
-| `hw.led.ins[].order`   | Color order enum (e.g., GRB = 1)             |
-| `hw.led.ins[].rev`     | Reverse LED strand direction                 |
-| `hw.led.matrix.panels` | Array of panel layout objects                |
-| `panels[].b`           | Panel enabled (boolean)                      |
-| `panels[].x`, `y`      | Top‑left corner of panel in the virtual grid |
-| `panels[].w`, `h`      | Width and height of each panel in LEDs       |
-| `panels[].r`           | Flip panel horizontal  (right start led)     |
-| `panels[].v`           | Flip panel vertically                        |
-| `panels[].s`           | Override serpentine wiring                   |
-| `wifi.ssid`            | Wi‑Fi network SSID                           |
-| `wifi.password`        | Wi‑Fi network password                       |
+| Key                    | Description                                                     |
+| ---------------------- | --------------------------------------------------------------- |
+| `hw.led.total`         | Total number of LEDs across all panels                          |
+| `hw.led.ins[].start`   | Starting LED index for this input segment                       |
+| `hw.led.ins[].len`     | Number of LEDs in this segment                                  |
+| `hw.led.ins[].skip`    | Number of LEDs to skip at the start                             |
+| `hw.led.ins[].pin`     | SPI / data pin number(s)                                        |
+| `hw.led.ins[].order`   | Color order enum (e.g., GRB = 1)                                |
+| `hw.led.ins[].rev`     | Reverse LED strand direction                                    |
+| `hw.led.matrix.panels` | Array of panel layout objects                                   |
+| `panels[].b`           | Panel enabled (boolean)                                         |
+| `panels[].x`, `y`      | Top‑left corner of panel in the virtual grid                    |
+| `panels[].w`, `h`      | Width and height of each panel in LEDs                          |
+| `panels[].r`           | Flip panel horizontal (right start led)                         |
+| `panels[].v`           | Flip panel vertically                                           |
+| `panels[].s`           | Override serpentine LED-wiring                                  |
+| `wifi.ssid`            | Wi‑Fi network SSID                                              |
+| `wifi.password`        | Wi‑Fi network password                                          |
+| `ap.ssid`              | Access Point ssid (Optional, defaults to "ESP32_AP")            |
+| `ap.password`          | Accesspoint network password (Optional, defaults to "test1234") |
 
-This should be mostly compatible with WLED-Config.
+Sections of this should be compatible with WLED-Config. Mainly the hw. (only tested for WS2812b-matrices single output)
 
 ## Usage
 
-1. Copy `config.json` to the root of your SD card.
+1. Copy `config.json` amd to the root of your SD card.
 2. (Optional) put a folder `./images/` at root of Sd card and put your bitmaps `*.bmp` inside. `convert "./input.png" -strip -colorspace sRGB -type TrueColor "BPP24:output-image.bmp"`
 3. Insert the SD card into the Esp-Sd-Cardreader.
 4. Install the Project with Platform.io to your ESP.
