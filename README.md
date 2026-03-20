@@ -91,7 +91,7 @@ Place a JSON file named `config.json` at the root of your SD card. The file shou
   },
   "ap": {
     "ssid": "ESP32_AP_1",
-    "password": "test123"
+    "password": "test1234"
   }
 }
 ```
@@ -121,17 +121,25 @@ Sections of this should be compatible with WLED-Config. Mainly the hw. (only tes
 
 ## Usage
 
-1. Copy `config.json` amd to the root of your SD card.
-2. (Optional) put a folder `./images/` at root of Sd card and put your bitmaps `*.bmp` inside. `convert "./input.png" -strip -colorspace sRGB -type TrueColor "BPP24:output-image.bmp"`
+1. Ensure your SD-Card is formated and has only one Fat32-Partition. (Otherwise the ESP might not recognise the SD-Card at all)
+2. . Copy `./example-sd-card-content/*` to the root of your SD card.
+   1. Select right config or edit `./example-sd-card-content/config.json`
+   2. (Optional) add your images at `./example-sd-card-content/images/` put your bitmaps `*.bmp` inside. `convert "./input.png" -strip -colorspace sRGB -type TrueColor "BPP24:output-image.bmp"`
+   3. (Optional) regenerate `python helper_scripts/wifi_qr_bitmap.py --ssid "ESP32_AP_Example" --password "test1234" --auth WPA --matrix 48 48 --out ./example-sd-card-content/images/wifi.bmp`
+   4. Finally copy everything to root of your SD-Card
 3. Insert the SD card into the Esp-Sd-Cardreader.
 4. Install the Project with Platform.io to your ESP.
 5. The firmware will parse hardware settings and Wi‑Fi credentials at startup.
 
 ## Troubleshooting
 
-- **SD init failed**: Check CS pin wiring and SD card formated FAT.
+- **SD init failed**:
+  - Check CS pin wiring and SD card formated FAT.
+  - Check SD-Card formating
+  - SD card might not work at all
 - **JSON parse error**: Verify that `config.json` is valid JSON (e.g., via [JSONLint](https://jsonlint.com/)).
 - **Wi‑Fi not connecting**: Confirm SSID/password are correct and in range.
+- **If you find something bad about this repo**: Check existing [Issues](https://github.com/UwUTastisch/LEDMatrixSign/issues) or Open a new [Issue](https://github.com/UwUTastisch/LEDMatrixSign/issues/new)
 
 ## License - MIT
 
