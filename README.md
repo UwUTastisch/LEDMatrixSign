@@ -6,6 +6,7 @@ A flexible LED matrix driver for ESP32-based controllers that reads its entire c
 
 ## Features
 
+- **LittleFS as Fallback**: Just run `pio run --target upload`, (change fs data at `/data` and than run) `pio run --target buildfs`, `pio run --target uploadfs`
 - **SD‑Card Configuration**: Load hardware and network settings from `/config.json` on SD card
 - **LED Matrix Layout**: Define multiple panels, their positions, sizes, and orientation parameters (rotate, flip, serpentine)
 - **Flexible LED Strip Mapping**: Support for skipped LEDs, multiple input segments, reversing order, and custom SPI pins
@@ -120,6 +121,17 @@ Place a JSON file named `config.json` at the root of your SD card. The file shou
 Sections of this should be compatible with WLED-Config. Mainly the hw. (only tested for WS2812b-matrices single output)
 
 ## Usage
+
+### Without SDCard or Reader (Fallback Option, not recommended)
+
+- Just run `pio run --target upload`
+- change fs data at `/data` and than run
+- run `pio run --target buildfs`
+- run `pio run --target uploadfs`
+
+Read infos at [Fork_Changes_for_LittleFS.md](Fork_Changes_for_LittleFS.md)
+
+### With SD Card (much more storage)
 
 1. Ensure your SD-Card is formated and has only one Fat32-Partition. (Otherwise the ESP might not recognise the SD-Card at all)
 2. . Copy `./example-sd-card-content/*` to the root of your SD card.
