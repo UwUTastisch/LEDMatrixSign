@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <SPI.h>
-#include <SD.h>
+
 #include <Adafruit_NeoPixel.h>
 #include "config.h"
 #define min(a, b) ((a) < (b) ? (a) : (b))
@@ -218,7 +218,7 @@ public:
     // Draw a 24-bpp BMP onto the matrix with general nearest-neighbor scaling
     bool drawBMP(const char *filename)
     {
-        File f = SD.open(filename, FILE_READ);
+        File f = activeFS().open(filename, FILE_READ);
         if (!f)
         {
             Serial.printf("❌ Open BMP %s failed\n", filename);

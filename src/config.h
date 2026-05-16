@@ -5,8 +5,11 @@
 #define DEBUG_MATRIX 0
 #endif
 
+// ——— Storage: SD preferred, LittleFS fallback ———
+// Both headers must be included so both filesystems can be probed at runtime.
 #include <SPI.h>
 #include <SD.h>
+#include <LittleFS.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <AsyncTCP.h>
@@ -27,21 +30,96 @@ const String portalURL = "http://4.3.2.1/index.html";
 
 DNSServer dnsServer;
 
-// Path to JSON configuration on SD card
+// Path to JSON configuration (same path on both SD and LittleFS)
 constexpr char CONFIG_PATH[] = "/config.json";
-#if !SD_CS
+
+// SD SPI pin defaults (override via build_flags: -D SD_CS=4 etc.)
+#if !defined(SD_CS)
 #define SD_CS 22
 #endif
-
-#if !SD_MOSI
+#if !defined(SD_MOSI)
 #define SD_MOSI MOSI
 #endif
-#if !SD_MISO
+#if !defined(SD_MISO)
 #define SD_MISO MISO
 #endif
-#if !SD_SCK
+#if !defined(SD_SCK)
 #define SD_SCK SCK
 #endif
+
+// ——— Global active filesystem ———
+// After initFS() this points to whichever FS is actually in use.
+// All runtime code (main.cpp, matrix_driver.h) uses `activeFS` exclusively.
+namespace FSMount
+{
+    enum Source
+    {
+        NONE,
+        SD_CARD,
+        LITTLEFS
+    };
+    extern Source source; // defined in config.h (inline via first TU that includes it)
+    extern fs::FS *fs;
+}
+
+// Only one translation unit should define these; guard with a macro set in main.cpp.
+#ifdef FS_MOUNT_DEFINE
+namespace FSMount
+{
+    Source source = NONE;
+    fs::FS *fs = nullptr;
+}
+#endif
+
+// Convenience accessor — use this everywhere instead of SD / LittleFS directly.
+inline fs::FS &activeFS() { return *FSMount::fs; }
+
+// ——— Try to mount SD, then LittleFS.  Returns true on success. ———
+inline bool initFS()
+{
+    // — Try SD first —
+    Serial.println("🔍 Trying SD card…");
+#if DEBUG_MATRIX
+    Serial.printf("   SD pins: CS=%d MOSI=%d MISO=%d SCK=%d\n",
+                  SD_CS, SD_MOSI, SD_MISO, SD_SCK);
+#endif
+    SPI.begin(SD_SCK, SD_MISO, SD_MOSI, -1);
+    if (SD.begin(SD_CS, SPI, 4000000))
+    {
+        // Make sure config.json is actually on the card
+        if (SD.exists(CONFIG_PATH))
+        {
+            Serial.println("✅ SD card mounted — using SD");
+            FSMount::source = FSMount::SD_CARD;
+            FSMount::fs = &SD;
+            return true;
+        }
+        Serial.println("⚠️  SD mounted but config.json not found — falling back to LittleFS");
+        SD.end(); // release SPI bus cleanly
+    }
+    else
+    {
+        Serial.println("⚠️  SD init failed — falling back to LittleFS");
+    }
+
+    // — Fall back to LittleFS —
+    Serial.println("🔍 Trying LittleFS…");
+    if (!LittleFS.begin(true)) // true = format on first use
+    {
+        Serial.println("❌ LittleFS mount failed!");
+        return false;
+    }
+    if (!LittleFS.exists(CONFIG_PATH))
+    {
+        Serial.println("❌ LittleFS mounted but config.json not found!");
+        Serial.println("ℹ️  Flash a filesystem image with: pio run --target uploadfs");
+        return false;
+    }
+    Serial.println("✅ LittleFS mounted — using LittleFS");
+    FSMount::source = FSMount::LITTLEFS;
+    FSMount::fs = &LittleFS;
+    return true;
+}
 
 // ——— Per-panel layout using WLED flags ———
 struct PanelConfig
@@ -74,21 +152,13 @@ public:
     uint8_t apChannel = WIFI_CHANNEL;
     bool apHidden = false;
 
-    bool loadFromSD(const char *path)
+    // Call this once — mounts SD or LittleFS and reads config.json.
+    bool loadConfig(const char *path)
     {
-        // Serial.printf("Checking SD card at Pins: CS=%d, MOSI=%d, MISO=%d, SCK=%d\n", SD_CS, SD_MOSI, SD_MISO, -1);
-#if DEBUG_MATRIX
-        delay(1000);
-        Serial.printf("Checking SD card at Pins: CS=%d, MOSI=%d, MISO=%d, SCK=%d\n", SD_CS, SD_MOSI, SD_MISO, -1);
-#endif
-
-        SPI.begin(SD_SCK, SD_MISO, SD_MOSI, -1);
-        if (!SD.begin(SD_CS, SPI, 4000000))
-        {
-            Serial.println("❌ SD init failed!");
+        if (!initFS())
             return false;
-        }
-        File f = SD.open(path);
+
+        File f = activeFS().open(path, FILE_READ);
         if (!f)
         {
             Serial.printf("❌ Failed to open %s\n", path);
@@ -106,6 +176,9 @@ public:
         parseDocument(doc);
         return true;
     }
+
+    // Legacy shim — main.cpp calls loadFromSD(); redirect to loadConfig().
+    bool loadFromSD(const char *path) { return loadConfig(path); }
 
     void beginWiFi()
     {
@@ -142,16 +215,16 @@ private:
         if (apSSID.isEmpty())
         {
             WiFi.softAP(fallbackSSID, fallbackPassword, WIFI_CHANNEL, 0, MAX_CLIENTS);
-            Serial.printf("⚠️ No AP SSID in config, using fallback SSID: \"%s\"\n", fallbackSSID);
-            Serial.printf("⚠️ No AP Password in config, using fallback Password: \"%s\"\n", fallbackPassword);
+            Serial.printf("⚠️ Using fallback SSID \"%s\"\n", fallbackSSID);
         }
         else
         {
             WiFi.softAP(apSSID.c_str(), apPassword.c_str(), apChannel, apHidden, MAX_CLIENTS);
-            Serial.printf("📡 SoftAP started: SSID=%s, Channel=%d, Hidden=%d\n", apSSID.c_str(), apChannel, apHidden);
+            Serial.printf("📡 SoftAP: SSID=%s Channel=%d Hidden=%d\n",
+                          apSSID.c_str(), apChannel, apHidden);
         }
 
-        // disable AMPDU RX bug on Android
+        // Disable AMPDU RX (Android bug workaround)
         esp_wifi_stop();
         esp_wifi_deinit();
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
@@ -168,7 +241,7 @@ private:
 
     void parseDocument(JsonDocument &doc)
     {
-        // — Parse LED/matrix section —
+        // — LED / matrix —
         auto hwLed = doc["hw"]["led"].as<JsonObject>();
         totalLEDs = hwLed["total"].as<uint16_t>();
         auto ins0 = hwLed["ins"][0].as<JsonObject>();
@@ -179,10 +252,10 @@ private:
         order = ins0["order"].as<uint8_t>();
         reverse = ins0["rev"].as<bool>();
 
-        Serial.printf("LEDs: total=%d, start=%d, len=%d, skip=%d, pin=%d, order=%d, reverse=%d\n",
+        Serial.printf("LEDs: total=%d start=%d len=%d skip=%d pin=%d order=%d rev=%d\n",
                       totalLEDs, startLED, stripLen, skipLEDs, pin, order, reverse);
 
-        // — Parse panels using WLED flags —
+        // — Panels —
         auto panelsArr = hwLed["matrix"]["panels"].as<JsonArray>();
         width = height = 0;
         panels.clear();
@@ -201,16 +274,15 @@ private:
             width = max<uint16_t>(width, pc.x + pc.w);
             height = max<uint16_t>(height, pc.y + pc.h);
         }
+        Serial.printf("Matrix: %dx%d panels=%zu\n", width, height, panels.size());
 
-        Serial.printf("Matrix: width=%d, height=%d, panels=%zu\n", width, height, panels.size());
-
-        // — Parse Wi-Fi section —
+        // — Wi-Fi —
         auto wifi = doc["wifi"].as<JsonObject>();
         wifiSsid = wifi["ssid"].as<const char *>();
         wifiPassword = wifi["password"].as<const char *>();
+        Serial.printf("Wi-Fi SSID: %s\n", wifiSsid.c_str());
 
-        Serial.printf("Wi-Fi: SSID=%s\n", wifiSsid.c_str());
-
+        // — AP —
         auto ap = doc["ap"].as<JsonObject>();
         if (ap.containsKey("ssid"))
             apSSID = ap["ssid"].as<const char *>();
@@ -220,7 +292,7 @@ private:
             apChannel = ap["chan"].as<uint8_t>();
         if (ap.containsKey("hide"))
             apHidden = ap["hide"].as<bool>();
-
-        Serial.printf("AP: SSID=%s, Channel=%d, Hidden=%d\n", apSSID.c_str(), apChannel, apHidden);
+        Serial.printf("AP: SSID=%s Channel=%d Hidden=%d\n",
+                      apSSID.c_str(), apChannel, apHidden);
     }
 };
