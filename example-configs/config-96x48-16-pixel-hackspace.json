@@ -1,0 +1,212 @@
+{
+  "hw": {
+    "led": {
+      "total": 4608,
+      "ins": [
+        {
+          "start": 0,
+          "len": 4608,
+          "skip": 0,
+          "pin": [10],
+          "order": 1,
+          "rev": false
+        }
+      ],
+      "matrix": {
+        "panels": [
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 0,
+            "y": 32,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 16,
+            "y": 32,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 32,
+            "y": 32,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 0,
+            "y": 16,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 16,
+            "y": 16,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 32,
+            "y": 16,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 0,
+            "y": 0,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 16,
+            "y": 0,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 32,
+            "y": 0,
+            "h": 16,
+            "w": 16
+          },
+
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 48,
+            "y": 32,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 64,
+            "y": 32,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 80,
+            "y": 32,
+            "h": 16,
+            "w": 16
+          },
+
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 48,
+            "y": 16,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 64,
+            "y": 16,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 80,
+            "y": 16,
+            "h": 16,
+            "w": 16
+          },
+
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 48,
+            "y": 0,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 64,
+            "y": 0,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 80,
+            "y": 0,
+            "h": 16,
+            "w": 16
+          }
+        ]
+      }
+    }
+  },
+  "wifi": {
+    "ssid": "pixel_matrix",
+    "password": "test1234"
+  },
+  "ap": {
+    "ssid": "ESP32_S3_AP_Example",
+    "password": "test1234"
+  }
+}
