@@ -6,7 +6,7 @@
         {
           "start": 0,
           "len": 64,
-          "pin": [5],
+          "pin": [0],
           "order": 0,
           "rev": false,
           "skip": 0

@@ -1,11 +1,11 @@
 {
   "hw": {
     "led": {
-      "total": 64,
+      "total": 2304,
       "ins": [
         {
           "start": 0,
-          "len": 64,
+          "len": 2304,
           "pin": [0],
           "order": 0,
           "rev": false,
@@ -15,14 +15,14 @@
       "matrix": {
         "panels": [
           {
-            "b": true,
-            "r": true,
-            "v": false,
-            "s": false,
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
             "x": 0,
             "y": 0,
-            "h": 8,
-            "w": 8
+            "h": 0,
+            "w": 0
           }
         ]
       }
