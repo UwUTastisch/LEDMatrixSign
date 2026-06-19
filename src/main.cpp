@@ -467,6 +467,10 @@ void setup()
     Serial.begin(115200);
     Serial.println("Starting up…");
 
+#if DEBUG_MATRIX
+    Serial.printf("free heap on start: %u bytes\n", ESP.getFreeHeap());
+#endif
+
     // Mount SD (preferred) or LittleFS (fallback), then parse config.json
     if (!config.loadFromSD(CONFIG_PATH))
     {
@@ -475,12 +479,20 @@ void setup()
             delay(1000);
     }
 
+#if DEBUG_MATRIX
+    Serial.printf("free heap before wifi: %u bytes\n", ESP.getFreeHeap());
+#endif
+
     config.beginWiFi();
 
     if (WiFi.status() != WL_CONNECTED)
         setUpAPServer();
     else
         Serial.println("Wi-Fi connected: " + WiFi.localIP().toString());
+
+#if DEBUG_MATRIX
+    Serial.printf("free heap before config init: %u bytes\n", ESP.getFreeHeap());
+#endif
 
     driver = new MatrixDriver(config);
     driver->begin();
@@ -491,7 +503,47 @@ void setup()
     if (!activeFS().exists("/imgchain"))
         activeFS().mkdir("/imgchain");
 
+#if DEBUG_MATRIX
+    Serial.printf("free heap before check index.html: %u bytes\n", ESP.getFreeHeap());
+    // Check filesystem
+    if (!activeFS().exists("/index.html"))
+        Serial.println("⚠️ Warning: index.html not found on active FS");
+    else
+    {
+        Serial.println("Check index.html:");
+        File f = activeFS().open("/index.html", FILE_READ);
+        if (!f)
+            Serial.println("❌ Failed to open index.html");
+        else
+        {
+            Serial.println("✅ index.html opened successfully");
+            f.close();
+        }
+    }
+    Serial.printf("free heap before setUpAPIServer: %u bytes\n", ESP.getFreeHeap());
+#endif
+
     setUpAPIServer();
+
+#if DEBUG_MATRIX
+    // Check filesystem
+    if (!activeFS().exists("/index.html"))
+        Serial.println("⚠️ Warning: index.html not found on active FS");
+    else
+    {
+        Serial.println("Check index.html:");
+        File f = activeFS().open("/index.html", FILE_READ);
+        if (!f)
+            Serial.println("❌ Failed to open index.html");
+        else
+        {
+            Serial.println("✅ index.html opened successfully");
+            f.close();
+        }
+    }
+
+    Serial.printf("free heap after setup: %u bytes\n", ESP.getFreeHeap());
+#endif
 }
 
 // ====== loop() ======
