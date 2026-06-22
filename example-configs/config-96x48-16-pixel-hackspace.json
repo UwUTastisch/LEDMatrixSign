@@ -19,99 +19,8 @@
             "r": false,
             "v": true,
             "s": true,
-            "x": 0,
-            "y": 32,
-            "h": 16,
-            "w": 16
-          },
-          {
-            "b": false,
-            "r": false,
-            "v": true,
-            "s": true,
-            "x": 16,
-            "y": 32,
-            "h": 16,
-            "w": 16
-          },
-          {
-            "b": false,
-            "r": false,
-            "v": true,
-            "s": true,
-            "x": 32,
-            "y": 32,
-            "h": 16,
-            "w": 16
-          },
-          {
-            "b": false,
-            "r": false,
-            "v": true,
-            "s": true,
-            "x": 0,
-            "y": 16,
-            "h": 16,
-            "w": 16
-          },
-          {
-            "b": false,
-            "r": false,
-            "v": true,
-            "s": true,
-            "x": 16,
-            "y": 16,
-            "h": 16,
-            "w": 16
-          },
-          {
-            "b": false,
-            "r": false,
-            "v": true,
-            "s": true,
-            "x": 32,
-            "y": 16,
-            "h": 16,
-            "w": 16
-          },
-          {
-            "b": false,
-            "r": false,
-            "v": true,
-            "s": true,
-            "x": 0,
-            "y": 0,
-            "h": 16,
-            "w": 16
-          },
-          {
-            "b": false,
-            "r": false,
-            "v": true,
-            "s": true,
-            "x": 16,
-            "y": 0,
-            "h": 16,
-            "w": 16
-          },
-          {
-            "b": false,
-            "r": false,
-            "v": true,
-            "s": true,
-            "x": 32,
-            "y": 0,
-            "h": 16,
-            "w": 16
-          },
-
-          {
-            "b": false,
-            "r": false,
-            "v": true,
-            "s": true,
             "x": 48,
-            "y": 32,
+            "y": 0,
             "h": 16,
             "w": 16
           },
@@ -121,7 +30,7 @@
             "v": true,
             "s": true,
             "x": 64,
-            "y": 32,
+            "y": 0,
             "h": 16,
             "w": 16
           },
@@ -131,7 +40,7 @@
             "v": true,
             "s": true,
             "x": 80,
-            "y": 32,
+            "y": 0,
             "h": 16,
             "w": 16
           },
@@ -173,7 +82,7 @@
             "v": true,
             "s": true,
             "x": 48,
-            "y": 0,
+            "y": 32,
             "h": 16,
             "w": 16
           },
@@ -183,7 +92,7 @@
             "v": true,
             "s": true,
             "x": 64,
-            "y": 0,
+            "y": 32,
             "h": 16,
             "w": 16
           },
@@ -193,7 +102,100 @@
             "v": true,
             "s": true,
             "x": 80,
+            "y": 32,
+            "h": 16,
+            "w": 16
+          },
+
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 0,
             "y": 0,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 16,
+            "y": 0,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 32,
+            "y": 0,
+            "h": 16,
+            "w": 16
+          },
+
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 0,
+            "y": 16,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 16,
+            "y": 16,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 32,
+            "y": 16,
+            "h": 16,
+            "w": 16
+          },
+
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 0,
+            "y": 32,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 16,
+            "y": 32,
+            "h": 16,
+            "w": 16
+          },
+          {
+            "b": false,
+            "r": false,
+            "v": true,
+            "s": true,
+            "x": 32,
+            "y": 32,
             "h": 16,
             "w": 16
           }
@@ -206,7 +208,7 @@
     "password": "test1234"
   },
   "ap": {
-    "ssid": "ESP32_S3_AP_Example",
+    "ssid": "Hackspace_Tafel",
     "password": "test1234"
   }
 }
