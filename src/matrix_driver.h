@@ -4,20 +4,215 @@
 #include <Arduino.h>
 #include <SPI.h>
 
-#include <Adafruit_NeoPixel.h>
+#include <driver/rmt_tx.h>
+#include <driver/rmt_encoder.h>
+#include <soc/soc_caps.h>
+#include <stddef.h>
 #include "config.h"
 #define min(a, b) ((a) < (b) ? (a) : (b))
+
+#ifndef __containerof
+#define __containerof(ptr, type, member) \
+    ((type *)((char *)(ptr) - offsetof(type, member)))
+#endif
+
+// ——— Custom RMT encoder: RGB bytes followed by a WS2812 reset (latch) ———
+typedef struct
+{
+    rmt_encoder_t base;
+    rmt_encoder_t *bytes_encoder;
+    rmt_encoder_t *copy_encoder;
+    rmt_symbol_word_t reset_code;
+    int state;
+} ws2812_rmt_encoder_t;
+
+static size_t IRAM_ATTR ws2812_rmt_encode(rmt_encoder_t *encoder,
+                                          rmt_channel_handle_t channel,
+                                          const void *primary_data,
+                                          size_t data_size,
+                                          rmt_encode_state_t *ret_state)
+{
+    ws2812_rmt_encoder_t *e = __containerof(encoder, ws2812_rmt_encoder_t, base);
+    rmt_encoder_handle_t bytes = e->bytes_encoder;
+    rmt_encoder_handle_t copy = e->copy_encoder;
+    rmt_encode_state_t session = RMT_ENCODING_RESET;
+    rmt_encode_state_t out = RMT_ENCODING_RESET;
+    size_t n = 0;
+
+    switch (e->state)
+    {
+    case 0: // stream the pixel bytes
+        n += bytes->encode(bytes, channel, primary_data, data_size, &session);
+        if (session & RMT_ENCODING_COMPLETE)
+            e->state = 1;
+        if (session & RMT_ENCODING_MEM_FULL)
+        {
+            out = (rmt_encode_state_t)(out | RMT_ENCODING_MEM_FULL);
+            break;
+        }
+        // fall through
+    case 1: // emit the reset / latch pulse
+        n += copy->encode(copy, channel, &e->reset_code,
+                          sizeof(e->reset_code), &session);
+        if (session & RMT_ENCODING_COMPLETE)
+        {
+            e->state = RMT_ENCODING_RESET;
+            out = (rmt_encode_state_t)(out | RMT_ENCODING_COMPLETE);
+        }
+        if (session & RMT_ENCODING_MEM_FULL)
+            out = (rmt_encode_state_t)(out | RMT_ENCODING_MEM_FULL);
+        break;
+    }
+
+    *ret_state = out;
+    return n;
+}
+
+static esp_err_t ws2812_rmt_encoder_reset(rmt_encoder_t *encoder)
+{
+    ws2812_rmt_encoder_t *e = __containerof(encoder, ws2812_rmt_encoder_t, base);
+    rmt_encoder_reset(e->bytes_encoder);
+    rmt_encoder_reset(e->copy_encoder);
+    e->state = RMT_ENCODING_RESET;
+    return ESP_OK;
+}
+
+static esp_err_t ws2812_rmt_encoder_del(rmt_encoder_t *encoder)
+{
+    ws2812_rmt_encoder_t *e = __containerof(encoder, ws2812_rmt_encoder_t, base);
+    rmt_del_encoder(e->bytes_encoder);
+    rmt_del_encoder(e->copy_encoder);
+    free(e);
+    return ESP_OK;
+}
+
+// ——— Drop-in replacement for the slice of Adafruit_NeoPixel we use ———
+class Ws2812Rmt
+{
+public:
+    Ws2812Rmt(uint16_t count, uint8_t pin) : _count(count), _pin(pin) {}
+
+    void begin()
+    {
+        if (_buf)
+            return;
+        _buf = (uint8_t *)calloc(size_t(_count) * 3, 1); // GRB wire order
+        if (!_buf)
+        {
+            Serial.println("❌ WS2812: out of memory for pixel buffer");
+            return;
+        }
+
+        rmt_tx_channel_config_t ch = {};
+        ch.gpio_num = (gpio_num_t)_pin;
+        ch.clk_src = RMT_CLK_SRC_DEFAULT;
+        ch.resolution_hz = 10 * 1000 * 1000; // 10 MHz -> 0.1 µs / tick
+        // Two hardware blocks: small (~hundreds of bytes) but enough ISR slack
+        // to keep refilling while Wi-Fi / AsyncWebServer interrupts run.
+        ch.mem_block_symbols = 2 * SOC_RMT_MEM_WORDS_PER_CHANNEL;
+        ch.trans_queue_depth = 4;
+        if (rmt_new_tx_channel(&ch, &_chan) != ESP_OK)
+        {
+            Serial.println("❌ WS2812: rmt_new_tx_channel failed");
+            return;
+        }
+
+        ws2812_rmt_encoder_t *e =
+            (ws2812_rmt_encoder_t *)calloc(1, sizeof(ws2812_rmt_encoder_t));
+        e->base.encode = ws2812_rmt_encode;
+        e->base.del = ws2812_rmt_encoder_del;
+        e->base.reset = ws2812_rmt_encoder_reset;
+
+        rmt_bytes_encoder_config_t bcfg = {};
+        // WS2812B bit timings @ 10 MHz (ticks of 0.1 µs):
+        //   '0' = 0.3 µs high, 0.9 µs low   '1' = 0.9 µs high, 0.3 µs low
+        bcfg.bit0.level0 = 1;
+        bcfg.bit0.duration0 = 3;
+        bcfg.bit0.level1 = 0;
+        bcfg.bit0.duration1 = 9;
+        bcfg.bit1.level0 = 1;
+        bcfg.bit1.duration0 = 9;
+        bcfg.bit1.level1 = 0;
+        bcfg.bit1.duration1 = 3;
+        bcfg.flags.msb_first = 1; // WS2812 expects MSB first
+        rmt_new_bytes_encoder(&bcfg, &e->bytes_encoder);
+
+        rmt_copy_encoder_config_t ccfg = {};
+        rmt_new_copy_encoder(&ccfg, &e->copy_encoder);
+
+        // ~300 µs low = latch (safe for newer WS2812B that want >280 µs)
+        e->reset_code.level0 = 0;
+        e->reset_code.duration0 = 1500;
+        e->reset_code.level1 = 0;
+        e->reset_code.duration1 = 1500;
+        e->state = RMT_ENCODING_RESET;
+
+        _encoder = &e->base;
+        rmt_enable(_chan);
+    }
+
+    void show()
+    {
+        if (!_buf || !_chan || !_encoder)
+            return;
+        rmt_transmit_config_t tx = {};
+        tx.loop_count = 0; // single shot
+        rmt_transmit(_chan, _encoder, _buf, size_t(_count) * 3, &tx);
+        rmt_tx_wait_all_done(_chan, portMAX_DELAY);
+    }
+
+    void clear()
+    {
+        if (_buf)
+            memset(_buf, 0, size_t(_count) * 3);
+    }
+
+    static uint32_t Color(uint8_t r, uint8_t g, uint8_t b)
+    {
+        return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+    }
+
+    void setPixelColor(uint16_t i, uint32_t c)
+    {
+        if (i >= _count || !_buf)
+            return;
+        uint8_t *p = _buf + size_t(i) * 3;
+        p[0] = (c >> 8) & 0xFF;  // G
+        p[1] = (c >> 16) & 0xFF; // R
+        p[2] = c & 0xFF;         // B
+    }
+
+    uint32_t getPixelColor(uint16_t i) const
+    {
+        if (i >= _count || !_buf)
+            return 0;
+        uint8_t *p = _buf + size_t(i) * 3;
+        return ((uint32_t)p[1] << 16) | ((uint32_t)p[0] << 8) | p[2];
+    }
+
+    // Dimming is applied in MatrixDriver::setPixel, so this stays a no-op
+    // (matches the previously-commented strip.setBrightness call).
+    void setBrightness(uint8_t) {}
+    uint16_t numPixels() const { return _count; }
+
+private:
+    uint16_t _count;
+    uint8_t _pin;
+    uint8_t *_buf = nullptr;
+    rmt_channel_handle_t _chan = nullptr;
+    rmt_encoder_handle_t _encoder = nullptr;
+};
 
 // ——— Drives WS2812 strip & renders BMPs ———
 class MatrixDriver
 {
 public:
     ConfigReader &cfg;
-    Adafruit_NeoPixel strip;
+    Ws2812Rmt strip;
     int brightness = 255;
 
     MatrixDriver(ConfigReader &c)
-        : cfg(c), strip(c.stripLen, c.pin, NEO_GRB + NEO_KHZ800) {}
+        : cfg(c), strip(c.stripLen, c.pin) {}
 
     void debugPrintMatrix();
 
@@ -208,7 +403,8 @@ public:
         free(rowBuf);
         f.close();
 #if DEBUG_MATRIX
-        debugPrintMatrix(*this);
+        if (DEBUG_MATRIX > 1)
+            debugPrintMatrix(*this);
 #endif
         // strip.setBrightness(brightness); // Ensure current brightness is applied
         strip.show();
