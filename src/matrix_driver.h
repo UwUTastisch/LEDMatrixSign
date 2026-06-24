@@ -9,6 +9,7 @@
 #include <soc/soc_caps.h>
 #include <stddef.h>
 #include "config.h"
+#include "gfx/framebuffer.h"
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
 #ifndef __containerof
@@ -222,6 +223,24 @@ public:
         strip.show();
     }
     void show() { strip.show(); }
+
+    // ——— 2.0: push a composited matrix-sized FrameBuffer to the LEDs ———
+    // The FrameFactory hands us the already-composited RGBA buffer at matrix
+    // resolution; we map each (x,y) through the panel layout and apply global
+    // brightness. Transparent pixels (alpha 0) read as black.
+    void showFrameBuffer(const FrameBuffer &fb)
+    {
+        if (fb.w != cfg.width || fb.h != cfg.height)
+            return;
+        strip.clear();
+        for (uint16_t y = 0; y < cfg.height; y++)
+            for (uint16_t x = 0; x < cfg.width; x++)
+            {
+                const Rgba &c = fb.atRef(x, y);
+                setPixel(x, y, c.r, c.g, c.b);
+            }
+        strip.show();
+    }
 
     // Map (x,y) → global LED index
     int xyToIndex(uint16_t x, uint16_t y)

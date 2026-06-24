@@ -16,3 +16,7 @@ src/old/main.cpp.old.v1
 src/old/main.cpp.old.v2
 src/old/main.cpp.old.v3
 test/README
+
+# Python
+__pycache__/
+*.pyc

@@ -1,0 +1,19 @@
+{
+  "default_params": {
+    "greeting": "blahaj says hi"
+  },
+  "frames": [
+    {
+      "asset": { "x": 0, "y": 0, "name": "blahaj.bmp" },
+      "scrolling_text": {
+        "x": 18, "y": 4, "dx": 46, "dy": 12,
+        "text": "{greeting}",
+        "font": "5x7",
+        "color": "linear-gradient(90deg, #4a90e2, #a0d0ff)",
+        "scroll_speed": 12.0,
+        "scroll_direction": "horizontal"
+      },
+      "duration": 4000
+    }
+  ]
+}
