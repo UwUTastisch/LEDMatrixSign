@@ -52,11 +52,30 @@ void setUpAPServer()
                       { req->redirect(portalURL); });
 }
 
+// ====== debug trace ======
+// Flushed, slowed traces so nothing is lost over USB-CDC if the next call
+// resets the chip. Prints free heap and this task's stack high-water-mark
+// (lowest free stack ever seen, in bytes — a small/shrinking number means
+// stack pressure).
+#define TRACE(msg) do {                                                        \
+    Serial.printf("[T] %-24s heap=%lu stackHWM=%lu t=%lums\n", (msg),          \
+                  (unsigned long)ESP.getFreeHeap(),                            \
+                  (unsigned long)uxTaskGetStackHighWaterMark(NULL),            \
+                  (unsigned long)millis());                                    \
+    Serial.flush();                                                            \
+    delay(40);                                                                 \
+} while (0)
+
 // ====== setup() ======
 void setup()
 {
     Serial.begin(115200);
-    Serial.println("LED Matrix Sign 2.0 — starting up…");
+    delay(300); // give USB-CDC time to come up so we don't lose early lines
+    Serial.println();
+    Serial.printf("LED Matrix Sign 2.0 — starting up… (last reset reason=%d)\n",
+                  (int)esp_reset_reason());
+    Serial.flush();
+    TRACE("setup:enter");
 
     // Mount SD (preferred) or LittleFS (fallback), then parse config.json
     if (!config.loadFromSD(CONFIG_PATH))
@@ -65,33 +84,46 @@ void setup()
         for (;;)
             delay(1000);
     }
+    TRACE("config loaded");
 
     config.beginWiFi();
+    TRACE("beginWiFi returned");
     if (WiFi.status() != WL_CONNECTED)
         setUpAPServer();
     else
         Serial.println("Wi-Fi connected: " + WiFi.localIP().toString());
+    TRACE("ap/sta routes set");
 
     // Matrix driver
     driver = new MatrixDriver(config);
+    TRACE("driver constructed");
     driver->begin();
+    TRACE("driver->begin done");
 
     // Compositor: size both layers + output to the panel dimensions
     factory.init(config.width, config.height);
+    TRACE("factory.init done");
     factory.setLoader(Storage::loadAnimation); // primary buffer loads FS anims
+    TRACE("setLoader done");
 
     // Make sure /anim exists for uploads + persistence
     Storage::ensureBaseDirs();
+    TRACE("ensureBaseDirs done");
 
     // REST API 2.0
     api = new ApiV2(server, driver, factory, config);
+    TRACE("api constructed");
     api->begin();
+    TRACE("api->begin done");
 
     // Static frontend (index.html) if present on the filesystem
     setUpStaticRoutes();
+    TRACE("static routes set");
 
     server.begin();
-    Serial.println("HTTP server up. Heap free: " + String(ESP.getFreeHeap()));
+    TRACE("server.begin done");
+    Serial.println("✅ HTTP server up — setup complete.");
+    Serial.flush();
 }
 
 // ====== loop() ======

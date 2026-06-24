@@ -95,6 +95,8 @@ public:
 
     void begin()
     {
+        Serial.printf("[T] Ws2812Rmt::begin pin=%u count=%u\n", _pin, _count);
+        Serial.flush();
         if (_buf)
             return;
         _buf = (uint8_t *)calloc(size_t(_count) * 3, 1); // GRB wire order
@@ -103,6 +105,7 @@ public:
             Serial.println("❌ WS2812: out of memory for pixel buffer");
             return;
         }
+        Serial.println("[T]   pixel buffer allocated"); Serial.flush();
 
         rmt_tx_channel_config_t ch = {};
         ch.gpio_num = (gpio_num_t)_pin;
@@ -117,6 +120,7 @@ public:
             Serial.println("❌ WS2812: rmt_new_tx_channel failed");
             return;
         }
+        Serial.println("[T]   rmt_new_tx_channel ok"); Serial.flush();
 
         ws2812_rmt_encoder_t *e =
             (ws2812_rmt_encoder_t *)calloc(1, sizeof(ws2812_rmt_encoder_t));
@@ -149,17 +153,24 @@ public:
         e->state = RMT_ENCODING_RESET;
 
         _encoder = &e->base;
+        Serial.println("[T]   encoders created, enabling channel…"); Serial.flush();
         rmt_enable(_chan);
+        Serial.println("[T]   rmt_enable ok"); Serial.flush();
     }
 
     void show()
     {
         if (!_buf || !_chan || !_encoder)
             return;
+        static int traceN = 0;
+        bool tr = (traceN++ < 3);
+        if (tr) { Serial.printf("[T] show #%d: rmt_transmit (%u bytes)…\n", traceN, (unsigned)(_count*3)); Serial.flush(); }
         rmt_transmit_config_t tx = {};
         tx.loop_count = 0; // single shot
-        rmt_transmit(_chan, _encoder, _buf, size_t(_count) * 3, &tx);
+        esp_err_t err = rmt_transmit(_chan, _encoder, _buf, size_t(_count) * 3, &tx);
+        if (tr) { Serial.printf("[T] show #%d: rmt_transmit -> %d, waiting…\n", traceN, (int)err); Serial.flush(); }
         rmt_tx_wait_all_done(_chan, portMAX_DELAY);
+        if (tr) { Serial.printf("[T] show #%d: wait_all_done returned\n", traceN); Serial.flush(); }
     }
 
     void clear()
