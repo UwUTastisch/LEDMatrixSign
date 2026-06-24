@@ -203,7 +203,10 @@ public:
         }
         Serial.println();
         Serial.print("📶 IP Address: ");
-        Serial.println(WiFi.localIP());
+        if (WiFi.getMode() == WIFI_MODE_AP)
+            Serial.println(WiFi.softAPIP());
+        else
+            Serial.println(WiFi.localIP());
     }
 
 private:
@@ -224,13 +227,13 @@ private:
                           apSSID.c_str(), apChannel, apHidden);
         }
 
-        // Disable AMPDU RX (Android bug workaround)
-        esp_wifi_stop();
-        esp_wifi_deinit();
-        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-        cfg.ampdu_rx_enable = false;
-        esp_wifi_init(&cfg);
-        esp_wifi_start();
+        // NOTE: an earlier "disable AMPDU RX" workaround used to run here —
+        // esp_wifi_stop()/deinit()/init()/start() AFTER softAP(). On current
+        // ESP32 cores that tore down the AP we'd just configured (IP came up as
+        // 0.0.0.0) and tripped the task watchdog (TG1WDT_SYS_RST) during setup.
+        // It's removed: the AP now stays up with its configured IP. If you ever
+        // truly need AMPDU-RX disabled for an Android captive-portal quirk, do
+        // it BEFORE WiFi.mode()/softAP(), not after — never deinit a live AP.
     }
 
     void setUpDNSServer()
