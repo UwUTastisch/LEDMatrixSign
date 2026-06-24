@@ -74,13 +74,29 @@ void setup()
 }
 
 // ====== loop() ======
+// IMPORTANT: the Arduino loop runs as a FreeRTOS task sharing the core with the
+// Wi-Fi / TCP / idle tasks. It MUST yield every iteration, or the task watchdog
+// fires (rst:0x8 TG1WDT_SYS_RST). We also cap rendering to a fixed frame rate so
+// we don't pointlessly re-rasterise and re-clock the LED strip thousands of
+// times per second.
+static const uint16_t kTargetFps = 60;
+static const unsigned long kFrameIntervalMs = 1000UL / kTargetFps; // ~16 ms
+
 void loop()
 {
     if (WiFi.getMode() == WIFI_MODE_AP)
         dnsServer.processNextRequest();
 
-    // Advance the compositor timeline and push the composed frame to the panel.
+    static unsigned long lastFrame = 0;
     const unsigned long now = millis();
-    factory.render(now);
-    driver->showFrameBuffer(factory.out);
+    if (now - lastFrame >= kFrameIntervalMs)
+    {
+        lastFrame = now;
+        factory.render(now);                 // advance timeline + composite
+        driver->showFrameBuffer(factory.out); // push to the panel
+    }
+
+    // Hand the CPU back to the scheduler (feeds the watchdog, lets Wi-Fi +
+    // AsyncTCP + DNS run). Without this the device resets within seconds.
+    delay(1);
 }
