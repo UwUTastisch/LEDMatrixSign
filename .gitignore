@@ -20,3 +20,4 @@ test/README
 # Python
 __pycache__/
 *.pyc
+*.patch

@@ -1,869 +1,479 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Matrix Dashboard</title>
-  <style>
-    :root {
-    --bg: #f0f0f0;
-    --fg: #222;
-    --panel-bg: #fff;
-    --panel-border: #ccc;
-    --btn-bg: #e0e0e0;
-    --btn-hover: #d0d0d0;
-    --input-bg: #fff;
-    --selected-border: #007ACC;
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>LED Matrix Sign — Control</title>
+<style>
+  /* ── tokens ───────────────────────────────────────────────────────────── */
+  :root{
+    --bg:#0a0b0d;        /* unlit board */
+    --surface:#14161b;
+    --surface-2:#1b1e25;
+    --line:#262b34;
+    --text:#e7eaf0;
+    --muted:#8a92a0;
+    --amber:#ffb000;     /* LED accent, used with restraint */
+    --green:#36e06b;
+    --danger:#ff5c57;
+    --mono: ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --r:10px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #181818;
-      --fg: #eee;
-      --panel-bg: #242424;
-      --panel-border: #444;
-      --btn-bg: #333;
-      --btn-hover: #444;
-      --input-bg: #303030;
-    }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 70% -10%, #14171d 0%, transparent 60%),
+      var(--bg);
+    color:var(--text); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.5;
+    min-height:100vh;
   }
-  body { background: var(--bg); color: var(--fg); font-family: sans-serif; margin: 0; padding: 20px; }
-  h1 { text-align: center; margin-bottom: 20px; }
-  .container { display: flex; gap: 20px; }
-  @media (max-width: 768px) { .container { flex-direction: column; } }
-  .panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); padding: 15px; flex: 1; }
-  .filename-group {display: flex;align-items: stretch;margin: 5px 0;border-radius: 6px;overflow: hidden;border: 1px solid var(--panel-border);background: var(--input-bg);width: 100%;max-width: 400px;}
-  .filename-group input {border: none;margin: 0;padding: 6px 8px;background: transparent;}
-  #filenameInput {flex: 2 1 60%;min-width: 120px;border-radius: 6px 0 0 6px;}
-  #filenameExt {flex: 1 0 60px;max-width: 80px;border-left: 1px solid var(--panel-border);border-radius: 0 6px 6px 0;text-align: center;}
-  .suffix-label {display: flex;align-items: center;padding: 0 8px;background: var(--btn-bg);border-left: 1px solid var(--panel-border);border-right: 1px solid var(--panel-border);font-size: 0.9em;color: var(--fg);user-select: none;min-width: 40px;justify-content: center;}
-  .upload-section {display: flex;flex-direction: column;align-items: center;margin-bottom: 1.5rem;}
-  #uploadBtn {margin: 0 auto;padding: 8px 24px;border-radius: 6px;transition: all 0.2s ease;font-weight: 500;}
-  #uploadBtn:hover {transform: translateY(-1px);box-shadow: 0 2px 4px rgba(0,0,0,0.1);color: var(--fg);user-select: none;min-width: 40px;justify-content: center;}
-  /* Palette */
-  #palette-controls {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
+  a{color:var(--amber)}
+  .wrap{max-width:1100px; margin:0 auto; padding:22px 18px 60px}
+
+  /* ── masthead ─────────────────────────────────────────────────────────── */
+  header.bar{display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:22px}
+  .logo{display:flex; align-items:center; gap:11px}
+  .logo .dots{display:grid; grid-template-columns:repeat(3,7px); grid-auto-rows:7px; gap:3px}
+  .logo .dots i{border-radius:50%; background:#2a2f39}
+  .logo .dots i.on{background:var(--amber); box-shadow:0 0 6px rgba(255,176,0,.8)}
+  .logo h1{font:600 16px/1 var(--mono); letter-spacing:.02em; margin:0}
+  .logo small{display:block; color:var(--muted); font:500 11px/1.4 var(--mono); letter-spacing:.14em; text-transform:uppercase; margin-top:4px}
+  .host{margin-left:auto; display:flex; align-items:center; gap:8px}
+  .host label{color:var(--muted); font:500 11px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase}
+  .host input{width:190px}
+
+  input,select,textarea,button{font-family:var(--sans); font-size:14px}
+  input,select,textarea{
+    background:var(--surface-2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:8px 10px; width:100%;
   }
-  #pickColorBtn.active { background: var(--btn-hover); }
-  #palette { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
-  .color-swatch { width: 30px; height: 30px; border: 2px solid var(--panel-border); cursor: pointer; border-radius: 4px; position: relative; }
-  .color-swatch.selected { border-color: var(--selected-border); }
-  .color-swatch input { opacity: 0; width: 100%; height: 100%; position: absolute; top: 0; left: 0; /* disable pointer events so inputs don’t intercept canvas or swatch clicks */ pointer-events: none; }
-  /* Controls */
-  button { background: var(--btn-bg); border: none; padding: 6px 12px; margin: 5px 2px; border-radius: 4px; cursor: pointer; color: var(--fg); }
-  button:hover { background: var(--btn-hover); }
-  input[type="text"], input[type="number"] { background: var(--input-bg); border: 1px solid var(--panel-border); padding: 4px 8px; border-radius: 4px; color: var(--fg); }
-  textarea { background: var(--input-bg); border: 1px solid var(--panel-border); color: var(--fg); }
-  /* Other panels */
-  #imageList, #chain-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--panel-border); background: var(--input-bg); }
-  .image-item, #chain-list li { display: flex; align-items: center; justify-content: space-between; padding: 5px; border-bottom: 1px solid var(--panel-border); }
-  .image-item:last-child, #chain-list li:last-child { border-bottom: none; }
-  #chain-list img { width: 30px; height: 30px; margin-right: 10px; }
-  .image-item .btn-group {
-    display: flex;
-    gap: 6px;
-    margin-left: auto;
+  input:focus,select:focus,textarea:focus,button:focus-visible{
+    outline:2px solid var(--amber); outline-offset:1px; border-color:transparent;
+  }
+  textarea{font-family:var(--mono); font-size:12.5px; resize:vertical; min-height:104px}
+  label.field{display:block; margin:0 0 10px}
+  label.field > span{display:block; color:var(--muted); font:500 11px/1.4 var(--mono); letter-spacing:.1em; text-transform:uppercase; margin-bottom:5px}
+
+  button{
+    background:var(--surface-2); color:var(--text); border:1px solid var(--line);
+    border-radius:8px; padding:9px 14px; cursor:pointer; font-weight:550;
+    transition:border-color .12s, background .12s, transform .04s;
+  }
+  button:hover{border-color:#39404c}
+  button:active{transform:translateY(1px)}
+  button.primary{background:var(--amber); color:#1a1304; border-color:transparent}
+  button.primary:hover{background:#ffbe2e}
+  button.ghost{background:transparent}
+  button.danger{color:var(--danger); border-color:#3a2a2c}
+  button.danger:hover{border-color:var(--danger)}
+  .row{display:flex; gap:9px; flex-wrap:wrap}
+
+  /* ── layout ───────────────────────────────────────────────────────────── */
+  .grid{display:grid; grid-template-columns:minmax(0,420px) minmax(0,1fr); gap:18px; align-items:start}
+  @media(max-width:820px){ .grid{grid-template-columns:1fr} .host input{width:140px} }
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:16px}
+  .card + .card{margin-top:18px}
+  .eyebrow{color:var(--muted); font:600 11px/1 var(--mono); letter-spacing:.16em; text-transform:uppercase; margin:0 0 13px}
+
+  /* ── signature: live LED preview ──────────────────────────────────────── */
+  .screen{
+    background:#050608; border:1px solid #20242c; border-radius:12px;
+    padding:14px; display:flex; justify-content:center; align-items:center;
+    aspect-ratio:1/1; overflow:hidden;
+  }
+  #panel{image-rendering:pixelated; width:100%; height:100%; display:block}
+  .meta{display:flex; gap:18px; flex-wrap:wrap; margin-top:13px; font-family:var(--mono); font-size:12px; color:var(--muted)}
+  .meta b{color:var(--text); font-weight:600}
+  .dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#3a3f49; margin-right:6px; vertical-align:middle}
+  .dot.live{background:var(--green); box-shadow:0 0 7px rgba(54,224,107,.8)}
+  @media (prefers-reduced-motion:no-preference){
+    .dot.live{animation:pulse 1.6s ease-in-out infinite}
+    @keyframes pulse{50%{opacity:.45}}
   }
 
-  /* Canvas Container Styles */
-  .canvas-container {
-    position: relative;
-    width: 100%;
-    padding-top: 100%; /* Creates square container based on width */
-    margin: 10px auto;
-    border: 1px solid var(--panel-border);
-    border-radius: 4px;
-    background: #000; /* Fallback for canvas background */
-  }
+  /* brightness */
+  .bright{display:flex; align-items:center; gap:12px}
+  .bright input[type=range]{accent-color:var(--amber); padding:0}
+  .bright output{font-family:var(--mono); font-size:13px; min-width:34px; text-align:right; color:var(--text)}
 
-  #matrix, #overlayCanvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100% !important;
-    height: 100% !important;
-    image-rendering: pixelated;
-  }
+  /* ── tabs ─────────────────────────────────────────────────────────────── */
+  .tabs{display:flex; gap:4px; margin-bottom:14px; border-bottom:1px solid var(--line)}
+  .tabs button{background:none; border:none; border-bottom:2px solid transparent; border-radius:0; color:var(--muted); padding:8px 12px; font-family:var(--mono); font-size:12.5px; letter-spacing:.04em}
+  .tabs button[aria-selected=true]{color:var(--text); border-bottom-color:var(--amber)}
+  .tab{display:none}
+  .tab.active{display:block}
 
-  #matrix {
-    cursor: crosshair;
-    z-index: 1;
-    background: #000;
-  }
+  /* anim list */
+  .anim{border:1px solid var(--line); border-radius:9px; padding:11px 12px; margin-bottom:9px; background:var(--surface-2)}
+  .anim .id{font-family:var(--mono); font-size:13px; font-weight:600; word-break:break-all}
+  .anim .assets{color:var(--muted); font-family:var(--mono); font-size:11px; margin-top:3px}
+  .anim .ctl{display:flex; gap:7px; margin-top:10px; flex-wrap:wrap; align-items:center}
+  .anim input{width:74px}
+  .pill{font-family:var(--mono); font-size:11px; color:var(--amber); border:1px solid #3a3115; background:#1d1809; padding:2px 7px; border-radius:999px}
 
-  #overlayCanvas {
-    z-index: 2;
-    pointer-events: none;
-  }
+  .hint{color:var(--muted); font-size:12.5px; margin:9px 0 0}
+  .hint code,.tab code{font-family:var(--mono); font-size:.92em; color:var(--text); background:var(--surface-2); padding:1px 5px; border-radius:5px}
+  .empty{color:var(--muted); font-family:var(--mono); font-size:12.5px; padding:16px 4px; text-align:center}
+  pre.out{background:#0c0e12; border:1px solid var(--line); border-radius:8px; padding:11px; font-family:var(--mono); font-size:11.5px; color:#aeb6c2; overflow:auto; max-height:230px; margin:0}
 
-  /* Ensure canvas elements have inline dimensions */
-  #matrix, #overlayCanvas {
-    width: 100%;
-    height: 100%;
-  }
-
-   .btn-group button {
-    transition: all 0.2s ease;
-    position: relative;
-  }
-  
-  .reference-active {
-    background: var(--selected-border) !important;
-    color: white !important;
-    box-shadow: 0 0 0 2px var(--selected-border);
-    transform: translateY(-2px);
-  }
-  .tool-active {
-    background: var(--selected-border) !important;
-    color: white !important;
-    transform: translateY(-2px);
-  }
-  </style>
+  /* toast */
+  #toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); opacity:0; pointer-events:none; transition:.18s; background:var(--surface-2); border:1px solid var(--line); border-left:3px solid var(--amber); color:var(--text); padding:11px 15px; border-radius:9px; font-size:13.5px; max-width:90vw; box-shadow:0 8px 30px rgba(0,0,0,.5); z-index:50}
+  #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  #toast.err{border-left-color:var(--danger)}
+  #toast.ok{border-left-color:var(--green)}
+</style>
 </head>
 <body>
-  <h1>Matrix Dashboard</h1>
-  <div class="container">
-    <div class="panel">
-      <h2>Draw Pixel Art</h2>
-      <div id="palette-controls">
-        <button id="brushToolBtn" class="tool-active" title="Brush">🖌️</button>
-        <button id="bucketToolBtn" title="Bucket">🪣</button>
-        <label for="brushSize" style="margin-left:10px;">Brush Size: <span id="brushSizeValue">1</span></label>
-        <input type="range" id="brushSize" min="1" max="8" step="1" value="1" style="margin:0 5px; width: 100px;">
-        <button id="undoBtn" disabled>Undo</button>
-        <button id="redoBtn" disabled>Redo</button>
+<div class="wrap">
+  <header class="bar">
+    <div class="logo">
+      <div class="dots" aria-hidden="true">
+        <i class="on"></i><i></i><i class="on"></i>
+        <i></i><i class="on"></i><i></i>
+        <i class="on"></i><i></i><i class="on"></i>
       </div>
-      <div id="palette"></div>
-      <div class="canvas-container">
-        <canvas id="matrix"></canvas>
-        <canvas id="overlayCanvas"></canvas>
-      </div>
-      <div class="upload-section">
-        <div class="filename-group">
-          <input type="text" id="filenameInput" placeholder="Base name">
-          <span id="numberSuffix" class="suffix-label">1</span>
-          <input type="text" id="filenameExt" placeholder=".bmp">
-        </div>
-        <button id="uploadBtn">Upload</button>
+      <div>
+        <h1>matrix.sign</h1>
+        <small>2.0 control</small>
       </div>
     </div>
-    <div class="panel">
-      <section>
-        <h2>Browse Saved Images</h2>
-        <input type="text" id="searchBox" placeholder="Search images...">
-        <div id="imageList"></div>
-        <div id="preview">
-          <h3>Preview</h3>
-          <img id="previewImg" alt="Image preview">
+    <div class="host">
+      <label for="host">Host</label>
+      <input id="host" placeholder="same origin" autocomplete="off" spellcheck="false" />
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- LEFT: the panel itself -->
+    <div>
+      <section class="card">
+        <p class="eyebrow">Live panel</p>
+        <div class="screen"><canvas id="panel" width="64" height="64"></canvas></div>
+        <div class="meta">
+          <span><span id="livedot" class="dot"></span><span id="conn">connecting…</span></span>
+          <span>size <b id="size">—</b></span>
+          <span>playing <b id="playing">—</b></span>
+          <span>speed <b id="speed">—</b></span>
         </div>
       </section>
-      <section>
-        <h2>Build Animation Chain</h2>
-        <div>
-            <label id="fpsLabel">FPS: 
-              <input type="number" id="fpsInput" value="5" step="0.1" min="0.1">
-            </label>
-            <label id="durationLabel" style="display:none; margin-left:10px;"> <!--TODO: fix int-division-->
-              Total Duration (ms): 
-              <input type="number" id="durationInput" value="1000" step="100" min="1">
-            </label>
-            <button id="toggleModeBtn">Use Duration</button>
-            <br>
-            <label id="chainNumLabel">SaveNum:
-              <input type="number" id="chainNumInput" value="-1" step="1" min="-1">
-            </label>
-            <button id="loadChainBtn">Load Chain</button>
+
+      <section class="card">
+        <p class="eyebrow">Brightness</p>
+        <div class="bright">
+          <input id="bright" type="range" min="0" max="255" value="128" aria-label="Brightness" />
+          <output id="brightval">128</output>
         </div>
-        <button id="startChainBtn">Start</button>
-        <button id="clearChainBtn">Clear</button>
-        <div id="brightness-control" style="margin-top:10px; text-align:center;">
-          <label for="brightnessSlider">Brightness: </label>
-          <input type="range" id="brightnessSlider" min="0" max="255" value="255" style="width: 80%;">
-          <span id="brightnessValue">255</span>
-        </div>
-        <ul id="chain-list"></ul>
+        <p class="hint">Applies immediately. Lower it if the panel browns out on USB power.</p>
       </section>
     </div>
+
+    <!-- RIGHT: controls -->
+    <section class="card">
+      <div class="tabs" role="tablist">
+        <button role="tab" aria-selected="true" data-tab="anims">animations</button>
+        <button role="tab" aria-selected="false" data-tab="draw">draw</button>
+        <button role="tab" aria-selected="false" data-tab="upload">upload</button>
+        <button role="tab" aria-selected="false" data-tab="info">info</button>
+      </div>
+
+      <!-- ANIMATIONS -->
+      <div class="tab active" id="tab-anims">
+        <div class="row" style="margin-bottom:12px">
+          <button id="refresh" class="ghost">Refresh list</button>
+          <button id="stopall" class="danger">Stop playback</button>
+        </div>
+        <div id="animlist"><div class="empty">Loading animations…</div></div>
+      </div>
+
+      <!-- DRAW -->
+      <div class="tab" id="tab-draw">
+        <p class="hint" style="margin-top:0">Push an object to the overlay buffer (sits on top of any running animation). The body is one frame — the same shape as a single entry in an anim's <code>frames[]</code>.</p>
+        <div class="row" style="margin:12px 0">
+          <button data-demo="text" class="ghost">Insert text</button>
+          <button data-demo="rect" class="ghost">Insert rectangle</button>
+          <button data-demo="line" class="ghost">Insert line</button>
+        </div>
+        <label class="field"><span>Frame JSON</span>
+          <textarea id="drawjson">{
+  "text": { "x": 0, "y": 0, "text": "hi", "font": "5x7", "color": "#ffb000" },
+  "duration": 0
+}</textarea>
+        </label>
+        <div class="row">
+          <button id="drawsend" class="primary">Draw to overlay</button>
+          <button id="drawclear" class="danger">Clear overlay</button>
+        </div>
+      </div>
+
+      <!-- UPLOAD -->
+      <div class="tab" id="tab-upload">
+        <p class="eyebrow" style="margin-top:2px">Upload animation</p>
+        <label class="field"><span>Animation id</span>
+          <input id="ua-name" placeholder="de.uwutastisch.myanim" autocomplete="off" spellcheck="false" /></label>
+        <label class="field"><span>anim.json</span>
+          <textarea id="ua-json">{
+  "default_params": {},
+  "frames": [
+    { "text": { "x": 0, "y": 0, "text": "hello" }, "duration": 1000 }
+  ]
+}</textarea></label>
+        <button id="ua-send" class="primary">Upload animation</button>
+
+        <hr style="border:none; border-top:1px solid var(--line); margin:20px 0" />
+
+        <p class="eyebrow">Upload asset</p>
+        <p class="hint" style="margin-top:0">Assets must be 32-bit BGRA8888 BMP. Convert with <code>tools/bmp_bgra.py</code> first.</p>
+        <label class="field" style="margin-top:10px"><span>Animation id</span>
+          <input id="uas-name" placeholder="de.uwutastisch.myanim" autocomplete="off" spellcheck="false" /></label>
+        <label class="field"><span>BMP file</span>
+          <input id="uas-file" type="file" accept=".bmp,image/bmp" /></label>
+        <button id="uas-send" class="primary">Upload asset</button>
+      </div>
+
+      <!-- INFO -->
+      <div class="tab" id="tab-info">
+        <div class="row" style="margin-bottom:12px">
+          <button id="info-refresh" class="ghost">Refresh</button>
+        </div>
+        <p class="eyebrow">Filesystem</p>
+        <pre class="out" id="fsout">—</pre>
+        <p class="eyebrow" style="margin-top:16px">GPIO pins</p>
+        <pre class="out" id="gpioout">—</pre>
+        <p class="eyebrow" style="margin-top:16px">Live composition</p>
+        <pre class="out" id="compout">—</pre>
+      </div>
+    </section>
   </div>
-  <div>
-    <h3>Found any Bug? Please report: <a href="https://github.com/UwUTastisch/LEDMatrixSign">Github</a></h3>
-  </div>
-  <script>
-    // Core drawing variables
-    var isDrawing = false;  // flag for brush drawing
+</div>
 
-    let selectedColor = '#E40303';
-    const canvas = document.getElementById('matrix');
-    let ctx = canvas.getContext('2d');
-    const palette = document.getElementById('palette');
-    // Color picker removed: no pickColorBtn or pickMode
+<div id="toast" role="status" aria-live="polite"></div>
 
-    // Palette persistence setup
-    const paletteSlots = 20;
-    const defaultPalette = [
-      '#FF0000','#FF7F00','#FFFF00','#7FFF00','#00FF00','#00FF7F','#00FFFF','#007FFF','#0000FF','#7F00FF',
-      '#FF00FF','#FF007F','#8B4513','#A9A9A9','#000000','#FFFFFF','#C0C0C0','#808080','#FFD700','#ADFF2F'
-    ];
-    let paletteColors = [];
-    function loadPaletteCookie() {
-      const match = document.cookie.match(/(?:^|; )palette=([^;]+)/);
-      if (match) {
-        try { paletteColors = JSON.parse(decodeURIComponent(match[1])); } catch {};
-      }
-      if (!Array.isArray(paletteColors) || paletteColors.length !== paletteSlots) {
-        paletteColors = defaultPalette.slice(0, paletteSlots);
-      }
-    }
-    function savePaletteCookie() {
-      document.cookie = 'palette=' + encodeURIComponent(JSON.stringify(paletteColors)) + ';path=/;max-age=' + (365*24*60*60);
-    }
-    function generatePaletteUI() {
-      palette.innerHTML = '';
-      for (let i = 0; i < paletteSlots; i++) {
-        const color = paletteColors[i];
-        const sw = document.createElement('div');
-        sw.className = 'color-swatch';
-        sw.dataset.index = i;
-        sw.dataset.color = color;
-        sw.style.background = color;
-        const inp = document.createElement('input');
-        inp.type = 'color'; inp.value = color;
-        inp.style.opacity = '0'; inp.style.width = '100%'; inp.style.height = '100%'; inp.style.position = 'absolute'; inp.style.top = '0'; inp.style.left = '0'; inp.style.zIndex = '-1';
-        inp.addEventListener('input', e => {
-          const c = e.target.value;
-          paletteColors[i] = c;
-          sw.dataset.color = c;
-          sw.style.background = c;
-          savePaletteCookie();
-          updateSelectedSwatch();
-        });
-        // long-press to open color picker
-        let pressTimer;
-        sw.addEventListener('mousedown', () => { pressTimer = setTimeout(() => inp.click(), 500); });
-        sw.addEventListener('mouseup', () => clearTimeout(pressTimer));
-        sw.addEventListener('mouseleave', () => clearTimeout(pressTimer));
-        sw.addEventListener('touchstart', () => { pressTimer = setTimeout(() => inp.click(), 500); });
-        sw.addEventListener('touchend', () => clearTimeout(pressTimer));
-        sw.appendChild(inp);
-        palette.appendChild(sw);
-      }
-      updateSelectedSwatch();
-    }
-    // Immediately initialize palette so it always appears
-    loadPaletteCookie();
-    generatePaletteUI();
-    selectedColor = paletteColors[0];
-    updateSelectedSwatch();
+<script>
+(() => {
+  "use strict";
+  // ── host / persistence ────────────────────────────────────────────────
+  const hostInput = document.getElementById("host");
+  const store = (() => { try { return window.localStorage; } catch (e) { return null; } })();
+  hostInput.value = (store && store.getItem("sign.host")) || "";
+  hostInput.addEventListener("change", () => {
+    if (store) try { store.setItem("sign.host", hostInput.value.trim()); } catch (e) {}
+    loadAnims(); refreshInfo();
+  });
+  const base = () => hostInput.value.trim().replace(/\/+$/, "");
+  const url  = p => base() + p;
 
-    let spec = { width: 8, height: 8 };
-    let chain = [], images = [];
-    let useDurationMode = false;
-    let brightness = 255;
-    let fileExt = '.bmp'; // Default extension, will be updated on init
-    const overlayCanvas = document.getElementById('overlayCanvas');
-    let ctxOverlay = overlayCanvas.getContext('2d');
-    let referenceImage = null;
+  // ── fetch helpers ─────────────────────────────────────────────────────
+  async function api(path, opts) {
+    opts = opts || {};
+    const init = { method: opts.method || "GET" };
+    if (opts.body !== undefined) { init.headers = { "Content-Type": "application/json" }; init.body = JSON.stringify(opts.body); }
+    const res = await fetch(url(path), init);
+    const text = await res.text();
+    let data; try { data = text ? JSON.parse(text) : {}; } catch (e) { data = { raw: text }; }
+    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+    return data;
+  }
 
-    // Brush and history for undo/redo
-    let brushSize = 1;
-    const brushSizeInput = document.getElementById('brushSize');
-    const brushSizeValue = document.getElementById('brushSizeValue');
-    brushSizeInput.addEventListener('input', () => {
-      brushSize = parseInt(brushSizeInput.value);
-      brushSizeValue.textContent = brushSize;
+  let toastTimer;
+  function toast(msg, kind) {
+    const t = document.getElementById("toast");
+    t.textContent = msg; t.className = "show " + (kind || "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.className = ""; }, 3200);
+  }
+
+  // ── tabs ──────────────────────────────────────────────────────────────
+  document.querySelectorAll(".tabs button").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b === btn)));
+      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+      if (btn.dataset.tab === "info") refreshInfo();
     });
-    // History stack
-    let history = [];
-    let historyIndex = -1;
-    const undoBtn = document.getElementById('undoBtn');
-    const redoBtn = document.getElementById('redoBtn');
-    undoBtn.addEventListener('click', () => { if (historyIndex > 0) restoreState(historyIndex - 1); });
-    redoBtn.addEventListener('click', () => { if (historyIndex < history.length - 1) restoreState(historyIndex + 1); });
+  });
 
-    // Tool palette buttons
-    const brushToolBtn = document.getElementById('brushToolBtn');
-    const bucketToolBtn = document.getElementById('bucketToolBtn');
-    let fillMode = false;
-    brushToolBtn.addEventListener('click', () => {
-      fillMode = false;
-      brushToolBtn.classList.add('tool-active');
-      bucketToolBtn.classList.remove('tool-active');
-    });
-    bucketToolBtn.addEventListener('click', () => {
-      fillMode = true;
-      bucketToolBtn.classList.add('tool-active');
-      brushToolBtn.classList.remove('tool-active');
-    });
-  
-    function updateUndoRedoButtons() {
-      undoBtn.disabled = historyIndex <= 0;
-      redoBtn.disabled = historyIndex >= history.length - 1;
-    }
-    function saveState() {
-      // truncate future history
-      history = history.slice(0, historyIndex + 1);
-      // save current state
-      history.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
-      historyIndex = history.length - 1;
-      updateUndoRedoButtons();
-    }
-    function restoreState(index) {
-      const imgData = history[index];
-      ctx.putImageData(imgData, 0, 0);
-      historyIndex = index;
-      updateUndoRedoButtons();
-    }
+  // ── live preview (the signature element) ──────────────────────────────
+  const canvas = document.getElementById("panel");
+  const ctx = canvas.getContext("2d");
+  let GW = 0, GH = 0;
 
-    // New controls
-    const fpsLabel      = document.getElementById('fpsLabel');
-    const durationLabel = document.getElementById('durationLabel');
-    const fpsInput      = document.getElementById('fpsInput');
-    const durationInput = document.getElementById('durationInput');
-    const toggleModeBtn = document.getElementById('toggleModeBtn');
-
-    function updateSuffixDisplay() {
-      const baseName = document.getElementById('filenameInput').value.trim();
-      const userExt = document.getElementById('filenameExt').value.trim();
-      const finalExt = userExt || fileExt;
-      
-      if (!baseName) {
-        document.getElementById('numberSuffix').textContent = '1';
-        return;
+  function drawDots(w, h, bytes) {
+    if (w !== GW || h !== GH) { canvas.width = w; canvas.height = h; GW = w; GH = h; }
+    const r = 0.42;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#0a0b0d"; ctx.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const b = bytes[i], g = bytes[i + 1], rr = bytes[i + 2], a = bytes[i + 3];
+        const lit = a !== 0 && (rr || g || b);
+        ctx.beginPath();
+        ctx.arc(x + 0.5, y + 0.5, r, 0, Math.PI * 2);
+        ctx.fillStyle = lit ? ("rgb(" + rr + "," + g + "," + b + ")") : "#14161b";
+        ctx.fill();
       }
+    }
+  }
 
-      const cleanBase = baseName.replace(/[^a-z0-9]/gi, '').toLowerCase();
-      const regex = new RegExp(`^${cleanBase}(\\d+)\\${finalExt}$`);
-      let maxNum = 0;
-      
-      images.forEach(filename => {
-        const match = filename.match(regex);
-        if (match) {
-          const num = parseInt(match[1], 10);
-          if (num > maxNum) maxNum = num;
-        }
+  function b64ToBytes(b64) {
+    const bin = atob(b64), n = bin.length, out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  const livedot = document.getElementById("livedot");
+  const conn = document.getElementById("conn");
+  function setOnline(ok, label) {
+    livedot.classList.toggle("live", ok);
+    conn.textContent = label || (ok ? "live" : "offline");
+  }
+
+  async function pollFrame() {
+    try {
+      const d = await api("/framebuffer/get");
+      if (d.data) drawDots(d.width, d.height, b64ToBytes(d.data));
+      setOnline(true, "live");
+    } catch (e) { setOnline(false, "no signal"); }
+  }
+
+  async function pollStatus() {
+    try {
+      const s = await api("/anim/status");
+      document.getElementById("playing").textContent = s.running ? (s.animname || "—") : "stopped";
+      const sp = Number(s.speed);
+      document.getElementById("speed").textContent = isFinite(sp) ? sp.toFixed(2) + "×" : "—";
+    } catch (e) {}
+    try {
+      const z = await api("/framebuffer/size");
+      document.getElementById("size").textContent = z.width + "×" + z.height;
+    } catch (e) {}
+  }
+
+  // ── brightness ────────────────────────────────────────────────────────
+  const bright = document.getElementById("bright");
+  const brightval = document.getElementById("brightval");
+  let brightTimer;
+  bright.addEventListener("input", () => {
+    brightval.textContent = bright.value;
+    clearTimeout(brightTimer);
+    brightTimer = setTimeout(async () => {
+      try { await api("/display/brightness", { method: "POST", body: { brightness: Number(bright.value) } }); }
+      catch (e) { toast("Couldn't set brightness: " + e.message, "err"); }
+    }, 120);
+  });
+  async function initBrightness() {
+    try { const d = await api("/display/brightness"); bright.value = d.brightness; brightval.textContent = d.brightness; } catch (e) {}
+  }
+
+  // ── animations ────────────────────────────────────────────────────────
+  const animlist = document.getElementById("animlist");
+  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+  async function loadAnims() {
+    animlist.innerHTML = '<div class="empty">Loading…</div>';
+    let d;
+    try { d = await api("/file/ls"); }
+    catch (e) {
+      animlist.innerHTML = '<div class="empty">Can\'t reach the sign at <b>' + esc(base() || "this page's origin") + '</b>.<br>Make sure you\'re on its Wi-Fi, or set the Host field above.</div>';
+      return;
+    }
+    const anims = d.anims || [];
+    if (!anims.length) { animlist.innerHTML = '<div class="empty">No animations on the device yet. Upload one from the Upload tab.</div>'; return; }
+    animlist.innerHTML = "";
+    anims.forEach(a => {
+      const el = document.createElement("div");
+      el.className = "anim";
+      const assets = a.assets || [];
+      el.innerHTML =
+        '<div class="id">' + esc(a.id) + '</div>' +
+        '<div class="assets">' + (assets.length ? assets.length + " asset" + (assets.length>1?"s":"") + " · " + assets.map(esc).join(", ") : "no assets") + '</div>' +
+        '<div class="ctl">' +
+          '<button class="primary" data-act="start">Play</button>' +
+          '<label style="color:var(--muted);font:500 11px/1 var(--mono)">cycles ' +
+            '<input type="number" min="0" value="0" data-cycles title="0 = loop forever" /></label>' +
+        '</div>';
+      el.querySelector('[data-act=start]').addEventListener("click", async () => {
+        const cycles = Number(el.querySelector('[data-cycles]').value) || 0;
+        try { await api("/anim/start", { method: "POST", body: { animname: a.id, cycles } }); toast("Playing " + a.id, "ok"); }
+        catch (e) { toast("Start failed: " + e.message, "err"); }
       });
-      
-      document.getElementById('numberSuffix').textContent = maxNum + 1;
-    }
-
-    document.getElementById('filenameInput').addEventListener('input', updateSuffixDisplay);
-    document.getElementById('filenameExt').addEventListener('input', updateSuffixDisplay);
-  
-    function applySpec() {
-      // Set actual pixel dimensions
-      canvas.width = spec.width;
-      canvas.height = spec.height;
-      overlayCanvas.width = spec.width;
-      overlayCanvas.height = spec.height;
-
-      // Set display dimensions through CSS
-      canvas.style.width = '100%';
-      canvas.style.height = '100%';
-      overlayCanvas.style.width = '100%';
-      overlayCanvas.style.height = '100%';
-
-      // Initialize contexts
-      ctx = canvas.getContext('2d');
-      ctxOverlay = overlayCanvas.getContext('2d');
-      
-      // Clear and initialize drawing canvas
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, spec.width, spec.height);
-      ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    }
-  
-    async function initSpec() {
-      try {
-        const res = await fetch('/api/imgspec');
-        const json = await res.json();
-        spec = { width: json.width, height: json.height };
-        fileExt = `.${json.format.toLowerCase()}`;
-        document.getElementById('filenameExt').value = fileExt;
-        updateSuffixDisplay(); // Add this line
-      } catch (e) { /* ignore */ }
-      applySpec();
-      saveState();   // seed undo/redo stack with initial canvas
-    }
-
-    async function setReferenceImage(name) {
-      try {
-        // Clear existing overlay first
-        ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-        
-        const res = await fetch(`/api/img?file=${encodeURIComponent(name)}`);
-        const json = await res.json();
-        referenceImage = new Image();
-        referenceImage.onload = () => {
-          // Create offscreen canvas to process image
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = spec.width;
-          tempCanvas.height = spec.height;
-          const tempCtx = tempCanvas.getContext('2d');
-          
-          // Draw image to temp canvas
-          tempCtx.drawImage(referenceImage, 0, 0);
-          const imageData = tempCtx.getImageData(0, 0, spec.width, spec.height);
-          const data = imageData.data;
-
-          // Process pixels: make black transparent and apply opacity
-          for (let i = 0; i < data.length; i += 4) {
-            // Check if pixel is black (RGB 0,0,0)
-            if (data[i] === 0 && data[i+1] === 0 && data[i+2] === 0) {
-              data[i+3] = 0; // Set alpha to 0
-            } else {
-              data[i+3] = 77; // ~30% opacity (255 * 0.3)
-            }
-          }
-
-          // Update overlay canvas
-          ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-          ctxOverlay.putImageData(imageData, 0, 0);
-        };
-        referenceImage.src = `data:image/bmp;base64,${json.img}`;
-      } catch (e) {
-        console.error('Error loading reference image:', e);
-      }
-    }
-
-    function getNextFilename(baseName) {
-      const cleanBase = baseName.replace(/[^a-z0-9]/gi, '').toLowerCase();
-      const finalExt = document.getElementById('filenameExt').value.trim() || fileExt;
-      const regex = new RegExp(`^${cleanBase}(\\d+)\\${finalExt}$`);
-      
-      let maxNum = 0;
-      images.forEach(filename => {
-        const match = filename.match(regex);
-        if (match) maxNum = Math.max(maxNum, parseInt(match[1], 10));
-      });
-      
-      return `${cleanBase}${maxNum + 1}${finalExt}`;
-    }
-  
-    function updateSelectedSwatch() {
-      document.querySelectorAll('.color-swatch').forEach(sw => {
-        sw.classList.toggle('selected', sw.dataset.color.toLowerCase() === selectedColor.toLowerCase());
-      });
-    }
-  
-    palette.addEventListener('click', e => {
-      const sw = e.target.closest('.color-swatch');
-      if (!sw) return;
-      selectedColor = sw.dataset.color;
-      updateSelectedSwatch();
+      animlist.appendChild(el);
     });
-  
-    function getCursorPos(e) {
-      const rect   = canvas.getBoundingClientRect();
-      const scaleX = rect.width / canvas.width;
-      const scaleY = rect.height / canvas.height;
-      const clientX = e.clientX ?? e.touches[0].clientX;
-      const clientY = e.clientY ?? e.touches[0].clientY;
-      return {
-        x: Math.floor((clientX - rect.left) / scaleX),
-        y: Math.floor((clientY - rect.top) / scaleY)
-      };
-    }
-  
-    function drawAt(e) {
-      const { x, y } = getCursorPos(e);
-      ctx.fillStyle = selectedColor;
-      // Draw with circular brush centered on the cursor
-      ctx.beginPath();
-      const centerX = x + 0.5;
-      const centerY = y + 0.5;
-      const radius = brushSize / 2;
-      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  
-    // Set up drawing and fill event listeners with undo/redo support
-    // On action start, snapshot state for undo/redo
-    canvas.addEventListener('mousedown', e => {
-      saveState();
-      const { x, y } = getCursorPos(e);
-      if (fillMode) {
-        floodFill(x, y);
-        saveState();
-      } else {
-        isDrawing = true;
-        drawAt(e);
-      }
-    });
-    canvas.addEventListener('mousemove', e => { if (isDrawing) drawAt(e); });
-    canvas.addEventListener('mouseup', () => {
-      if (isDrawing) saveState();
-      isDrawing = false;
-    });
-    canvas.addEventListener('mouseleave', () => { if (isDrawing) isDrawing = false; });
-    canvas.addEventListener('touchstart', e => {
-      e.preventDefault();
-      saveState();
-      const { x, y } = getCursorPos(e);
-      if (fillMode) {
-        floodFill(x, y);
-        saveState();
-      } else {
-        isDrawing = true;
-        drawAt(e);
-      }
-    });
-    canvas.addEventListener('touchmove', e => { e.preventDefault(); if (isDrawing) drawAt(e); });
-    canvas.addEventListener('touchend', e => {
-      e.preventDefault();
-      if (isDrawing) saveState();
-      isDrawing = false;
-    });
-    canvas.addEventListener('touchcancel', e => { e.preventDefault(); if (isDrawing) isDrawing = false; });
-  
-    function canvasToBMPBase64(cnv) {
-      const w = cnv.width, h = cnv.height;
-      const rowSize = Math.floor((w * 3 + 3) / 4) * 4;
-      const pixelArraySize = rowSize * h;
-      const headerSize = 14 + 40;
-      const buffer = new ArrayBuffer(headerSize + pixelArraySize);
-      const dv = new DataView(buffer);
-      let off = 0;
-      dv.setUint16(off, 0x4D42, true); off += 2;
-      dv.setUint32(off, buffer.byteLength, true); off += 4;
-      off += 4;
-      dv.setUint32(off, headerSize, true); off += 4;
-      dv.setUint32(off, 40, true); off += 4;
-      dv.setInt32(off, w, true); off += 4;
-      dv.setInt32(off, h, true); off += 4;
-      dv.setUint16(off, 1, true); off += 2;
-      dv.setUint16(off, 24, true); off += 2;
-      dv.setUint32(off, 0, true); off += 4;
-      dv.setUint32(off, pixelArraySize, true); off += 4;
-      off += 16;
-      const imgData = cnv.getContext('2d').getImageData(0, 0, w, h).data;
-      let pOff = headerSize;
-      for (let y = h - 1; y >= 0; y--) {
-        for (let x = 0; x < w; x++) {
-          const i = (y * w + x) * 4;
-          dv.setUint8(pOff++, imgData[i + 2]);
-          dv.setUint8(pOff++, imgData[i + 1]);
-          dv.setUint8(pOff++, imgData[i]);
-        }
-        while ((pOff - headerSize) % rowSize) dv.setUint8(pOff++, 0);
-      }
-      const bytes = new Uint8Array(buffer);
-      let bin = '';
-      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-      return btoa(bin);
-    }
-    
-    document.getElementById('brightnessSlider').addEventListener('input', function(e) {
-      brightness = parseInt(e.target.value);
-      document.getElementById('brightnessValue').textContent = brightness;
-      updateBrightness();
-    });
+  }
 
-    async function updateBrightness() {
-      try {
-        await fetch('/api/brightness', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brightness: brightness })
-        });
-      } catch (e) {
-        console.error('Failed to update brightness', e);
-      }
-    }
+  document.getElementById("refresh").addEventListener("click", loadAnims);
+  document.getElementById("stopall").addEventListener("click", async () => {
+    try { await api("/anim/stop", { method: "POST" }); toast("Playback stopped", "ok"); }
+    catch (e) { toast("Stop failed: " + e.message, "err"); }
+  });
 
-    document.getElementById('uploadBtn').addEventListener('click', async () => {
-      try {
-          // Get and validate inputs
-          const baseName = document.getElementById('filenameInput').value.trim();
-          if (!baseName) return alert('Enter filename base.');
-          
-          // Get extension and clean base name
-          const userExt = document.getElementById('filenameExt').value.trim();
-          const finalExt = userExt || fileExt;
-          const cleanBase = baseName.replace(/[^a-z0-9]/gi, '').toLowerCase();
-          
-          // Find existing files with this base and extension
-          const regex = new RegExp(`^${cleanBase}(\\d+)\\${finalExt}$`);
-          let maxNum = 0;
-          
-          images.forEach(filename => {
-              const match = filename.match(regex);
-              if (match) {
-                  const num = parseInt(match[1], 10);
-                  if (num > maxNum) maxNum = num;
-              }
-          });
-          
-          // Generate new filename
-          const newNum = maxNum + 1;
-          const filename = `${cleanBase}${newNum}${finalExt}`;
-          
-          // Convert canvas and upload
-          const base64 = canvasToBMPBase64(canvas);
-          const response = await fetch('/api/img', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ 
-                  file: filename,
-                  img: base64 
-              })
-          });
-          
-          if (!response.ok) throw new Error('Upload failed');
-          
-          // Update UI
-          const json = await response.json();
-          document.getElementById('filenameInput').value = cleanBase; // Reset to base without number
-          document.getElementById('numberSuffix').textContent = newNum + 1;
-          alert(`Uploaded successfully: ${json.file}`);
-          loadImageList("");
-          
-      } catch (error) {
-          console.error('Upload error:', error);
-          alert(`Upload failed: ${error.message}`);
-      }
-    });
+  // ── draw / overlay ────────────────────────────────────────────────────
+  const demos = {
+    text: { text: { x: 0, y: 0, text: "hi", font: "5x7", color: "#ffb000" }, duration: 0 },
+    rect: { rectangle: { x: 0, y: 0, dx: 12, dy: 8, border: 1, color: "#36e06b" }, duration: 0 },
+    line: { line: { x: 0, y: 0, dx: 15, dy: 15, thickness: 1, color: "#ff5c57" }, duration: 0 }
+  };
+  document.querySelectorAll("[data-demo]").forEach(b => b.addEventListener("click", () => {
+    document.getElementById("drawjson").value = JSON.stringify(demos[b.dataset.demo], null, 2);
+  }));
+  document.getElementById("drawsend").addEventListener("click", async () => {
+    let body;
+    try { body = JSON.parse(document.getElementById("drawjson").value); }
+    catch (e) { return toast("That's not valid JSON.", "err"); }
+    try { await api("/framebuffer/draw", { method: "POST", body }); toast("Drawn to overlay", "ok"); }
+    catch (e) { toast("Draw failed: " + e.message, "err"); }
+  });
+  document.getElementById("drawclear").addEventListener("click", async () => {
+    try { await api("/framebuffer/draw", { method: "POST", body: { clear: {} } }); toast("Overlay cleared", "ok"); }
+    catch (e) { toast("Clear failed: " + e.message, "err"); }
+  });
 
-    const searchBox = document.getElementById('searchBox');
-  
-    async function loadImageList(query) {
-      try {
-        var path = query ? `/api/listimg?contains=${query}` : "/api/listimg";
-        const res  = await fetch(path);
-        const json = await res.json();
-        images = json.list;
-        renderImageList();
-      } catch (e) { /* ignore */ }
-    }
+  // ── uploads ───────────────────────────────────────────────────────────
+  document.getElementById("ua-send").addEventListener("click", async () => {
+    const animname = document.getElementById("ua-name").value.trim();
+    if (!animname) return toast("Give the animation an id.", "err");
+    let anim;
+    try { anim = JSON.parse(document.getElementById("ua-json").value); }
+    catch (e) { return toast("anim.json isn't valid JSON.", "err"); }
+    try { await api("/file/uploadanim", { method: "POST", body: { animname, anim } }); toast("Uploaded " + animname, "ok"); loadAnims(); }
+    catch (e) { toast("Upload failed: " + e.message, "err"); }
+  });
 
-    searchBox.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          const query = searchBox.value.trim();
-          loadImageList(query);
-        }
-      });
-  
-    function renderImageList(filter = '') {
-      const list = document.getElementById('imageList');
-      list.innerHTML = '';
-      images
-        .filter(n => n.includes(filter))
-        .forEach(name => {
-          const item = document.createElement('div');
-          item.className = 'image-item';
-          const span = document.createElement('span');
-          span.textContent = name;
-          
-          const refBtn = document.createElement('button');
-            refBtn.textContent = 'Reference';
-            refBtn.onclick = () => {
-              const wasActive = refBtn.classList.contains('reference-active');
-              
-              // Remove active state from all buttons
-              document.querySelectorAll('.reference-active').forEach(btn => {
-                btn.classList.remove('reference-active');
-              });
-              
-              // Clear overlay if clicking the same button
-              if (wasActive) {
-                ctxOverlay.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-              } else {
-                setReferenceImage(name);
-                refBtn.classList.add('reference-active');
-              }
-            };
+  document.getElementById("uas-send").addEventListener("click", async () => {
+    const animname = document.getElementById("uas-name").value.trim();
+    const file = document.getElementById("uas-file").files[0];
+    if (!animname) return toast("Give the animation id the asset belongs to.", "err");
+    if (!file) return toast("Pick a .bmp file first.", "err");
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      let bin = ""; for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+      const data = btoa(bin);
+      await api("/file/uploadasset", { method: "POST", body: { animname, filename: file.name, data } });
+      toast("Uploaded " + file.name, "ok"); loadAnims();
+    } catch (e) { toast("Asset upload failed: " + e.message, "err"); }
+  });
 
-          // Existing buttons
-          const pv = document.createElement('button');
-          pv.textContent = 'Preview';
-          pv.onclick = () => previewImage(name);
-          const add = document.createElement('button');
-          add.textContent = 'Add';
-          add.onclick = () => addToChain(name);
+  // ── info ──────────────────────────────────────────────────────────────
+  function refreshInfo() {
+    const set = (id, p) => p.then(d => document.getElementById(id).textContent = JSON.stringify(d, null, 2))
+                            .catch(e => document.getElementById(id).textContent = "— (" + e.message + ")");
+    set("fsout", api("/file/fsstatus"));
+    set("gpioout", api("/display/gpiopins"));
+    set("compout", api("/framebuffer/getcomposition"));
+  }
+  document.getElementById("info-refresh").addEventListener("click", refreshInfo);
 
-          const btnGroup = document.createElement('div');
-          btnGroup.className = 'btn-group';
-          btnGroup.append(pv, refBtn, add);
-          item.append(span, btnGroup);
-          list.append(item);
-        });
-    }
-  
-    async function previewImage(name) {
-      try {
-        const res  = await fetch(`/api/img?file=${encodeURIComponent(name)}`);
-        const json = await res.json();
-        document.getElementById('previewImg').src = `data:image/bmp;base64,${json.img}`;
-      } catch { /* ignore */ }
-    }
-  
-    // Toggle FPS / Duration mode
-    toggleModeBtn.addEventListener('click', () => {
-      useDurationMode = !useDurationMode;
-      fpsLabel.style.display      = useDurationMode ? 'none' : 'inline';
-      durationLabel.style.display = useDurationMode ? 'inline' : 'none';
-      toggleModeBtn.textContent   = useDurationMode ? 'Use FPS' : 'Use Duration';
-    });
-  
-    function addToChain(name) {
-      //const res  = await fetch(`/api/img?file=${encodeURIComponent(name)}`);
-      //const json = await res.json();
-      //chain.push({ name, src: `data:image/bmp;base64,${json.img}` });
-      chain.push({name, src: `loading` });
-      updateChainUI();
-
-      
-      fetch(`/api/img?file=${encodeURIComponent(name)}`)
-        .then(res => res.json())
-        .then(json => {
-          // Find the just-added placeholder and update its src
-          const idx = chain.findIndex(item => item.name === name && item.src === "loading");
-          if (idx !== -1) {
-            chain[idx].src = `data:image/bmp;base64,${json.img}`;
-            updateChainUI();
-          }
-        })
-        .catch(() => {/* ignore errors */});
-    
-     
-    }
-  
-    function updateChainUI() {
-      const ul = document.getElementById('chain-list');
-      ul.innerHTML = '';
-      chain.forEach((item, i) => {
-        const li = document.createElement('li');
-        const img = document.createElement('img');
-        img.src = item.src;
-        const span = document.createElement('span');
-        span.textContent = item.name;
-        const btn = document.createElement('button');
-        btn.textContent = 'Remove';
-        btn.onclick = () => {
-          chain.splice(i, 1);
-          updateChainUI();
-        };
-        li.append(img, span, btn);
-        ul.append(li);
-      });
-    }
-  
-    document.getElementById('loadChainBtn').addEventListener('click', () => {
-        try {
-          let num = -1;
-          const chainNumInput = document.getElementById('chainNumInput');
-          if (!(chainNumInput.value && chainNumInput.value > 0)) {
-            alert("Type a chain-number first, to load the chain.")
-            return;
-          }
-
-          num = chainNumInput.value;
-          
-          fetch(`/api/imgchain?num=${num}`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            })
-            .then(res => res.json())
-            .then(json => {
-              // json is expected to be like: {"chain": ["test2.bmp"], "fps": 5.0, "num": 20}
-              if (!json.chain || !Array.isArray(json.chain)) {
-                alert('Invalid chain data');
-                return;
-              }
-              // Clear current chain
-              json.chain.forEach(element => {
-                addToChain(element);
-              });
-              alert("Loaded Successful")
-            })
-        } catch {
-          alert('Failed to load img chain');
-        }
-      });
-
-    document.getElementById('clearChainBtn').addEventListener('click', () => {
-      chain = [];
-      updateChainUI();
-      document.getElementById('chainNumInput').value = -1;
-    });
-  
-    document.getElementById('startChainBtn').addEventListener('click', async () => {
-      if (!chain.length) return alert('Add images first');
-      const names = chain.map(c => c.name);
-      let payload;
-      let fps;
-      
-      if (useDurationMode) {
-        const totalMs = parseFloat(durationInput.value);
-        if (isNaN(totalMs) || totalMs <= 0) {
-          return alert('Enter a valid total duration');
-        }
-        fps = parseFloat(chain.length) / (parseFloat(totalMs) / 1000.0);
-      } else {
-        fps = parseFloat(fpsInput.value);
-      }
-      
-      const chainNumInput =  document.getElementById('chainNumInput');
-      if (chainNumInput.value && chainNumInput.value >0) {
-        payload = { chain: names, fps: fps, num: parseInt(chainNumInput.value,10) };
-      } else {
-        payload = { chain: names, fps: fps };
-      }
-
-      try {
-        const res = await fetch('/api/imgchain', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        })
-        const json = await res.json();
-        
-        const chainNum = json.chainNum;
-        chainNumInput.value = parseInt(chainNum, 10);
-        
-        alert('Animation started!\n And stored as number: ' + chainNum);
-      } catch {
-        alert('Failed to start');
-      }
-    });
-  
-    initSpec().then(loadImageList);
-
-    function floodFill(startX, startY) {
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imgData.data;
-      const width = imgData.width;
-      const height = imgData.height;
-      const startIdx = (startY * width + startX) * 4;
-      const target = { r: data[startIdx], g: data[startIdx+1], b: data[startIdx+2], a: data[startIdx+3] };
-      const fillColor = hexToRgb(selectedColor);
-      // no-op if fill color matches target
-      if (target.r === fillColor.r && target.g === fillColor.g && target.b === fillColor.b) return;
-      const stack = [[startX, startY]];
-      while (stack.length) {
-        const [x, y] = stack.pop();
-        if (x < 0 || x >= width || y < 0 || y >= height) continue;
-        const idx = (y * width + x) * 4;
-        if (data[idx] === target.r && data[idx+1] === target.g && data[idx+2] === target.b && data[idx+3] === target.a) {
-          data[idx] = fillColor.r;
-          data[idx+1] = fillColor.g;
-          data[idx+2] = fillColor.b;
-          data[idx+3] = 255;
-          stack.push([x+1, y], [x-1, y], [x, y+1], [x, y-1]);
-        }
-      }
-      ctx.putImageData(imgData, 0, 0);
-    }
-
-    // Helper: convert hex color to RGB object
-    function hexToRgb(hex) {
-      hex = hex.replace(/^#/, '');
-      if (hex.length === 3) hex = hex.split('').map(h => h + h).join('');
-      const num = parseInt(hex, 16);
-      return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
-    }
-  </script>
+  // ── boot ──────────────────────────────────────────────────────────────
+  initBrightness();
+  loadAnims();
+  pollStatus();
+  setInterval(pollFrame, 600);
+  setInterval(pollStatus, 2000);
+  pollFrame();
+})();
+</script>
 </body>
 </html>

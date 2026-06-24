@@ -22,16 +22,34 @@ MatrixDriver *driver = nullptr;
 FrameFactory factory;
 ApiV2 *api = nullptr;
 
+// ====== Static frontend ======
+// 2.0 has no bundled UI compiled in, but if an index.html is present on the
+// active filesystem we serve it (plus any other static assets it references).
+void serveIndex(AsyncWebServerRequest *req)
+{
+    if (activeFS().exists("/index.html"))
+        req->send(activeFS(), "/index.html", "text/html");
+    else
+        req->send(200, "application/json",
+                  "{\"status\":\"ok\",\"info\":\"LED Matrix Sign 2.0 — REST API only "
+                  "(no index.html on filesystem)\"}");
+}
+
+void setUpStaticRoutes()
+{
+    server.on("/", HTTP_GET, serveIndex);
+    server.on("/index.html", HTTP_GET, serveIndex);
+}
+
 // ====== Captive-portal (AP fallback) ======
-// 2.0 drops the bundled web frontend, but we keep a minimal captive portal so
-// the device is reachable when it falls back to its own access point.
+// Redirect unknown requests to the portal so the control panel pops up when a
+// client joins the device's own access point.
 void setUpAPServer()
 {
     server.on("/generate_204", HTTP_ANY, [](AsyncWebServerRequest *req)
               { req->redirect(portalURL); });
     server.onNotFound([](AsyncWebServerRequest *req)
-                      { req->send(200, "application/json",
-                                  "{\"status\":\"ap\",\"info\":\"LED Matrix Sign 2.0 — use the REST API\"}"); });
+                      { req->redirect(portalURL); });
 }
 
 // ====== setup() ======
@@ -68,6 +86,9 @@ void setup()
     // REST API 2.0
     api = new ApiV2(server, driver, factory, config);
     api->begin();
+
+    // Static frontend (index.html) if present on the filesystem
+    setUpStaticRoutes();
 
     server.begin();
     Serial.println("HTTP server up. Heap free: " + String(ESP.getFreeHeap()));
