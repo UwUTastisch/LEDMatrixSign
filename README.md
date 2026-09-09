@@ -107,11 +107,11 @@ Place a JSON file named `config.json` at the root of your SD card. The file shou
 | `hw.led.ins[].order`   | Color order enum (e.g., GRB = 1)                                |
 | `hw.led.ins[].rev`     | Reverse LED strand direction                                    |
 | `hw.led.matrix.panels` | Array of panel layout objects                                   |
-| `panels[].b`           | Panel enabled (boolean)                                         |
+| `panels[].b`           | Reverse flip                                        |
 | `panels[].x`, `y`      | Top‑left corner of panel in the virtual grid                    |
 | `panels[].w`, `h`      | Width and height of each panel in LEDs                          |
 | `panels[].r`           | Flip panel horizontal (right start led)                         |
-| `panels[].v`           | Flip panel vertically                                           |
+| `panels[].v`           | Flip panel diagonal                                          |
 | `panels[].s`           | Override serpentine LED-wiring                                  |
 | `wifi.ssid`            | Wi‑Fi network SSID                                              |
 | `wifi.password`        | Wi‑Fi network password                                          |
