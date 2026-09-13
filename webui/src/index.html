@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LED Matrix Sign</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="panel topbar">
+        <div class="brand-mark">LED</div>
+        <div class="topbar-title">Matrix Sign</div>
+        <div id="connState" class="conn-state" title="Connection status"><span class="dot"></span>Connecting…</div>
+        <button id="toggleConfigButton" class="icon-button" type="button" aria-label="Open settings" title="Settings">⚙</button>
+      </header>
+
+      <div class="workspace">
+        <section class="panel canvas-panel">
+          <div id="canvasStage" class="canvas-stage">
+            <div id="canvasFrame" class="canvas-frame">
+              <canvas id="liveCanvas" aria-label="Current LED matrix output"></canvas>
+              <canvas id="frameCanvas" aria-label="LED matrix editor"></canvas>
+            </div>
+          </div>
+          <div class="canvas-footer">
+            <span id="cursorPos" title="Cursor position (x, y)">x –, y –</span>
+            <span id="matrixSize" title="Matrix size">–</span>
+            <span id="playingInfo" class="playing-info">Nothing playing</span>
+          </div>
+        </section>
+
+        <aside class="panel tabs-panel">
+          <div class="tabs-bar" role="tablist">
+            <button class="tab-btn active" data-tab="draw" role="tab" aria-selected="true" type="button">Draw</button>
+            <button class="tab-btn" data-tab="composition" role="tab" aria-selected="false" type="button">Objects</button>
+            <button class="tab-btn" data-tab="assets" role="tab" aria-selected="false" type="button">Assets</button>
+            <button class="tab-btn" data-tab="anim" role="tab" aria-selected="false" type="button">Animate</button>
+            <button class="tab-btn" data-tab="files" role="tab" aria-selected="false" type="button">Files</button>
+          </div>
+
+          <div class="tabs-body">
+            <!-- ================= DRAW ================= -->
+            <section class="tab-panel active" data-tab-panel="draw">
+              <div class="history-row">
+                <button id="undoButton" type="button" title="Undo (Ctrl+Z)" disabled>↺ Undo</button>
+                <button id="redoButton" type="button" title="Redo (Ctrl+Shift+Z)" disabled>↻ Redo</button>
+              </div>
+
+              <div class="tool-buttons" role="group" aria-label="Drawing tools">
+                <button class="tool" data-tool="select" type="button" title="Select &amp; move (V)" aria-label="Select and move tool">⬚</button>
+                <button class="tool active" data-tool="text" type="button" title="Text (T)" aria-label="Text tool">✎</button>
+                <button class="tool" data-tool="scroll" type="button" title="Scrolling text (S)" aria-label="Scrolling text tool">⇆</button>
+                <button class="tool" data-tool="line" type="button" title="Line (L)" aria-label="Line tool">／</button>
+                <button class="tool" data-tool="rectangle" type="button" title="Rectangle (R)" aria-label="Rectangle tool">▭</button>
+                <button class="tool" data-tool="asset" type="button" title="Asset (A)" aria-label="Asset tool">🖼</button>
+                <button class="tool" data-tool="move" type="button" title="Pan &amp; zoom (M)" aria-label="Pan tool">✥</button>
+              </div>
+
+              <div class="tab-field">
+                <span>Color</span>
+                <div class="color-row">
+                  <div id="colorPalette" class="color-palette"></div>
+                  <input id="customColor" type="color" value="#ff0000" title="Custom color" />
+                </div>
+                <div class="segmented" role="group" aria-label="Fill style">
+                  <button id="fillSolidButton" class="active" type="button">Solid</button>
+                  <button id="fillGradientButton" type="button">Gradient</button>
+                </div>
+                <div id="gradientSettings" class="gradient-row" hidden>
+                  <label class="mini-field"><span>To</span><input id="gradientColor" type="color" value="#0000ff" /></label>
+                  <label class="mini-field"><span>Angle</span><input id="gradientAngle" type="number" min="0" max="359" step="15" value="90" /></label>
+                  <button id="swapGradientButton" type="button" title="Swap colors" aria-label="Swap gradient colors">⇄</button>
+                </div>
+                <label class="mini-field wide">
+                  <span>Opacity</span>
+                  <div class="range-inline">
+                    <input id="opacityRange" type="range" min="0" max="255" value="255" />
+                    <strong id="opacityValue">100%</strong>
+                  </div>
+                </label>
+                <div id="colorPreview" class="color-preview" title="Current color"></div>
+              </div>
+
+              <div id="toolSettings">
+                <div id="textSettings" class="tab-field">
+                  <label for="textInput">Text</label>
+                  <input id="textInput" type="text" maxlength="64" value="HELLO" />
+                  <label for="textFont">Font</label>
+                  <select id="textFont" class="font-select"></select>
+                </div>
+
+                <div id="scrollSettings" class="tab-field" hidden>
+                  <label for="scrollTextInput">Scrolling text</label>
+                  <input id="scrollTextInput" type="text" value="Hello world" />
+                  <div class="two-col">
+                    <label class="mini-field"><span>Font</span><select id="scrollFont" class="font-select"></select></label>
+                    <label class="mini-field"><span>Direction</span>
+                      <select id="scrollDirection">
+                        <option value="horizontal">Horizontal</option>
+                        <option value="vertical">Vertical</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label class="mini-field"><span>Speed (pixels per second)</span><input id="scrollSpeed" type="number" min="0" max="200" step="1" value="12" /></label>
+                  <p class="hint-text">Drag a box on the canvas — the text scrolls inside it. A single click uses the rest of the row.</p>
+                </div>
+
+                <div id="lineSettings" class="tab-field" hidden>
+                  <label for="lineThickness">Line thickness</label>
+                  <input id="lineThickness" type="number" min="1" max="8" value="1" />
+                </div>
+
+                <div id="rectSettings" class="tab-field" hidden>
+                  <label for="rectBorder">Border width <span class="field-hint">(0 = filled)</span></label>
+                  <input id="rectBorder" type="number" min="0" max="8" value="1" />
+                </div>
+
+                <div id="assetSettings" class="tab-field" hidden>
+                  <label for="assetSelect">Asset</label>
+                  <div class="asset-settings-row">
+                    <select id="assetSelect"></select>
+                    <button id="openAssetEditorButton" type="button" title="Draw a new asset" aria-label="New asset">＋</button>
+                  </div>
+                  <label class="check-field"><input id="assetTint" type="checkbox" /> Recolor with the current color <span class="field-hint">(for single-color assets)</span></label>
+                </div>
+
+                <div id="selectSettings" class="tab-field" hidden>
+                  <div id="selectionInfo" class="selection-info">Nothing selected.</div>
+                  <div class="two-col">
+                    <label class="mini-field"><span>X</span><input id="selX" type="number" disabled /></label>
+                    <label class="mini-field"><span>Y</span><input id="selY" type="number" disabled /></label>
+                  </div>
+                  <div class="footer-actions">
+                    <button id="selEditButton" type="button" disabled>Edit…</button>
+                    <button id="selDuplicateButton" type="button" disabled>Duplicate</button>
+                    <button id="selRemoveButton" class="danger" type="button" disabled>Remove</button>
+                  </div>
+                  <p class="hint-text">Drag an object to move it. Arrow keys nudge it, Shift+arrow moves by 5, Delete removes it, Escape deselects. Tab and Shift+Tab step through the objects.</p>
+                  <p class="hint-text" id="selectUntracked" hidden></p>
+                </div>
+
+                <div id="moveSettings" class="tab-field" hidden>
+                  <label for="zoomRange">Zoom</label>
+                  <div class="range-inline">
+                    <input id="zoomRange" type="range" min="4" max="48" step="2" value="16" />
+                    <strong id="zoomValue">16px</strong>
+                  </div>
+                  <button id="fitZoomButton" type="button">Fit to window</button>
+                </div>
+              </div>
+              <p class="hint-text">Text can contain <code>{name}</code> placeholders — animations fill them in when started with parameters.</p>
+
+              <div class="tab-divider"></div>
+
+              <label class="tab-field">
+                <span>Save the overlay as an animation</span>
+                <input id="animNameInput" type="text" value="demo_anim" placeholder="Animation name" autocomplete="off" spellcheck="false" />
+              </label>
+
+              <div class="footer-actions">
+                <button id="saveFrameButton" class="primary" type="button">Save overlay</button>
+                <button id="clearAllButton" class="danger" type="button">Clear overlay</button>
+              </div>
+
+              <details class="raw-json">
+                <summary>Send a frame as JSON</summary>
+                <p class="hint-text">One frame object, the same shape as an entry in <code>frames[]</code>. Objects without an <code>objname</code> get one so they can be edited and undone.</p>
+                <textarea id="rawFrameInput" spellcheck="false" rows="7">{
+  "text": { "x": 0, "y": 0, "text": "hi", "font": "5x7", "color": "#ffb000" }
+}</textarea>
+                <div class="footer-actions">
+                  <button id="sendRawFrameButton" class="primary" type="button">Send frame</button>
+                </div>
+              </details>
+            </section>
+
+            <!-- ================= OBJECTS ================= -->
+            <section class="tab-panel" data-tab-panel="composition">
+              <div class="panel-header compact-header">
+                <h3>Overlay</h3>
+                <span id="compositionCount" class="count-pill">0</span>
+              </div>
+              <p class="hint-text">What you draw lives here, on top of any animation. Tap an object to edit or remove it.</p>
+              <ul id="compositionTree" class="tree-list">
+                <li class="empty">Nothing on the overlay yet — draw something on the canvas.</li>
+              </ul>
+
+              <div class="panel-header compact-header">
+                <h3>Playing animation</h3>
+                <span id="primaryCount" class="count-pill muted">0</span>
+              </div>
+              <p class="hint-text">Objects placed by the running animation. They change on every frame, so they can't be edited here.</p>
+              <ul id="primaryTree" class="tree-list">
+                <li class="empty">No animation is playing.</li>
+              </ul>
+            </section>
+
+            <!-- ================= ASSETS ================= -->
+            <section class="tab-panel" data-tab-panel="assets">
+              <div class="panel-header compact-header">
+                <h3>Assets</h3>
+                <div class="header-actions">
+                  <button id="newAssetButton" type="button">Draw new</button>
+                  <label class="upload-button" for="assetUpload">Upload image</label>
+                  <input id="assetUpload" type="file" accept="image/*,.bmp" multiple hidden />
+                </div>
+              </div>
+              <label class="tab-field">
+                <span>Uploads go to animation</span>
+                <input id="assetTargetAnim" type="text" list="animIdList" value="demo_anim" autocomplete="off" spellcheck="false" />
+              </label>
+              <label class="check-field"><input id="assetFitMatrix" type="checkbox" checked /> Shrink images larger than the matrix</label>
+              <p class="hint-text">Images are converted to the 32-bit BMP format the sign reads. Each asset belongs to one animation but can be drawn anywhere.</p>
+              <div id="assetList" class="asset-groups"></div>
+            </section>
+
+            <!-- ================= ANIMATE ================= -->
+            <section class="tab-panel" data-tab-panel="anim">
+              <div class="panel-header compact-header">
+                <h3>Play</h3>
+                <div id="statusBadge" class="status-badge">Idle</div>
+              </div>
+              <select id="animationSelector" aria-label="Animation to play"></select>
+              <div class="two-col">
+                <label class="mini-field"><span>Repeat <span class="field-hint">(0 = forever)</span></span><input id="cyclesInput" type="number" min="0" value="0" /></label>
+                <div class="mini-field"><span>&nbsp;</span>
+                  <div class="footer-actions nowrap-actions">
+                    <button id="startAnimationButton" class="primary" type="button">Play</button>
+                    <button id="stopAnimationButton" class="danger" type="button">Stop</button>
+                  </div>
+                </div>
+              </div>
+              <div id="paramsBlock" class="tab-field" hidden>
+                <span>Parameters</span>
+                <div id="paramsList" class="params-list"></div>
+              </div>
+              <div class="tab-field">
+                <span>Playback speed</span>
+                <div class="range-inline">
+                  <input id="speedRange" type="range" min="0.1" max="4" step="0.1" value="1" />
+                  <strong id="speedValue">1.0×</strong>
+                </div>
+              </div>
+
+              <div class="tab-divider"></div>
+
+              <div class="panel-header compact-header">
+                <h3>Build an animation</h3>
+                <span id="timelineCount" class="count-pill">0</span>
+              </div>
+              <p class="hint-text">Draw a frame on the overlay, capture it, change the drawing, capture again. You can also play other animations as steps.</p>
+              <ol id="timelineList" class="timeline-list"></ol>
+
+              <div class="builder-row">
+                <label class="mini-field"><span>Frame length (ms)</span><input id="captureDuration" type="number" min="0" step="100" value="1000" /></label>
+                <button id="captureFrameButton" type="button">Capture overlay</button>
+              </div>
+              <div class="builder-row">
+                <label class="mini-field grow"><span>Animation step</span><select id="stepAnimSelect"></select></label>
+                <label class="mini-field narrow"><span>Repeat</span><input id="stepCycles" type="number" min="1" value="1" /></label>
+                <label class="mini-field narrow"><span>Speed</span><input id="stepSpeed" type="number" min="0.1" step="0.1" value="1" /></label>
+                <button id="addAnimStepButton" type="button">Add</button>
+              </div>
+              <label class="check-field"><input id="blankEachFrame" type="checkbox" checked /> Start each captured frame from a blank screen</label>
+              <label class="tab-field">
+                <span>Animation name</span>
+                <input id="timelineName" type="text" value="my_animation" autocomplete="off" spellcheck="false" />
+              </label>
+              <div class="footer-actions">
+                <button id="uploadTimelineButton" class="primary" type="button">Save animation</button>
+                <button id="editTimelineJsonButton" type="button">Edit as JSON</button>
+                <button id="clearTimelineButton" class="danger" type="button">Clear steps</button>
+              </div>
+            </section>
+
+            <!-- ================= FILES ================= -->
+            <section class="tab-panel" data-tab-panel="files">
+              <div class="panel-header compact-header">
+                <h3>Files</h3>
+                <div class="header-actions">
+                  <button id="newAnimJsonButton" type="button">New animation</button>
+                  <button id="refreshFilesButton" class="icon-button small" type="button" aria-label="Refresh files" title="Refresh">↻</button>
+                </div>
+              </div>
+              <div id="fsStatus" class="fs-status"></div>
+              <div id="fileList" class="file-list"></div>
+            </section>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <datalist id="animIdList"></datalist>
+
+    <!-- ================= SETTINGS ================= -->
+    <div id="settingsModal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="settingsTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="settingsTitle">Settings</h3>
+          <button class="icon-button" data-close-modal type="button" aria-label="Close settings">✕</button>
+        </div>
+        <div class="config-grid">
+          <label class="field">
+            <span>Sign address</span>
+            <input id="apiBase" type="text" placeholder="This page's address" autocomplete="off" spellcheck="false" />
+            <small class="field-hint">Leave empty when this page is served by the sign. Opened from a file, use e.g. <code>http://4.3.2.1</code>.</small>
+          </label>
+          <button id="connectButton" class="primary" type="button">↻ Connect</button>
+
+          <label class="field">
+            <span>Brightness</span>
+            <div class="range-inline">
+              <input id="brightnessRange" type="range" min="0" max="255" value="128" />
+              <strong id="brightnessValue">128</strong>
+            </div>
+          </label>
+
+          <div class="field">
+            <span>Device</span>
+            <dl id="deviceInfo" class="device-info"><dt>Status</dt><dd>Not connected</dd></dl>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= OBJECT EDITOR ================= -->
+    <div id="objectEditModal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="objectEditTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="objectEditTitle">Edit object</h3>
+          <button class="icon-button" data-close-modal type="button" aria-label="Close">✕</button>
+        </div>
+        <p class="hint-text" id="objectEditHint"></p>
+        <div id="objectEditFields" class="object-edit-fields"></div>
+        <div class="footer-actions">
+          <button id="removeObjectButton" class="danger" type="button">Remove</button>
+          <button id="applyObjectButton" class="primary" type="button">Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= ASSET EDITOR ================= -->
+    <div id="assetEditorModal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="assetEditorTitle">
+      <div class="modal-card wide">
+        <div class="modal-header">
+          <h3 id="assetEditorTitle">Asset editor</h3>
+          <button class="icon-button" data-close-modal type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="asset-editor-body">
+          <div class="asset-editor-tools">
+            <div class="segmented" role="group" aria-label="Brush">
+              <button id="aePen" class="active" type="button">Paint</button>
+              <button id="aeErase" type="button">Erase</button>
+            </div>
+            <label class="mini-field narrow"><span>Width</span><input id="aeWidth" type="number" min="1" max="128" value="16" /></label>
+            <label class="mini-field narrow"><span>Height</span><input id="aeHeight" type="number" min="1" max="128" value="16" /></label>
+            <button id="aeClear" type="button">Clear</button>
+          </div>
+          <p class="hint-text">Paints with the color and opacity from the Draw tab. Erased pixels are transparent on the sign.</p>
+          <div class="asset-editor-stage"><canvas id="assetEditorCanvas" width="128" height="128"></canvas></div>
+          <div class="two-col">
+            <label class="mini-field"><span>Animation</span><input id="aeAnim" type="text" list="animIdList" autocomplete="off" spellcheck="false" /></label>
+            <label class="mini-field"><span>File name</span><input id="assetNameInput" type="text" value="custom_asset" autocomplete="off" spellcheck="false" /></label>
+          </div>
+          <div class="footer-actions">
+            <button id="saveAssetButton" class="primary" type="button">Save asset</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= ANIMATION JSON EDITOR ================= -->
+    <div id="jsonEditorModal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="jsonEditorTitle">
+      <div class="modal-card wide">
+        <div class="modal-header">
+          <h3 id="jsonEditorTitle">Animation JSON</h3>
+          <button class="icon-button" data-close-modal type="button" aria-label="Close">✕</button>
+        </div>
+        <label class="tab-field">
+          <span>Animation name</span>
+          <input id="jsonAnimName" type="text" autocomplete="off" spellcheck="false" placeholder="de.example.myanim" />
+        </label>
+        <textarea id="jsonEditorText" class="json-editor" spellcheck="false" rows="18"></textarea>
+        <ul id="jsonProblems" class="problems"></ul>
+        <div class="footer-actions">
+          <button id="jsonFormatButton" type="button">Format</button>
+          <button id="jsonCheckButton" type="button">Check</button>
+          <button id="jsonUploadButton" class="primary" type="button">Save to sign</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toastHost" class="toast-host" role="status" aria-live="polite"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
