@@ -61,6 +61,15 @@ struct RenderEnv
     const String &animDir; // e.g. "/anim/de.uwutastisch.blahaj"
 };
 
+inline JsonObject addDrawableJsonObject(JsonObject frameObj, const char *type)
+{
+    JsonArray arr = frameObj["drawables"].as<JsonArray>();
+    if (arr.isNull())
+        arr = frameObj["drawables"].to<JsonArray>();
+    JsonObject item = arr.add<JsonObject>();
+    return item[type].to<JsonObject>();
+}
+
 // ——— base drawable ———
 class CObj
 {
@@ -76,6 +85,9 @@ public:
     // sub-animation switches params or directory.
     virtual void bind(const Params & /*params*/, const String & /*animDir*/) {}
     virtual void toJson(JsonObject frameObj) = 0; // re-emit into a frame object
+    // Structural equality test (ignore `id`). Used to avoid duplicate
+    // stacking when re-applying frames that already exist in a layer.
+    virtual bool equals(const CObj &other) const { return false; }
 
     bool matches(const String &ref) const
     {
@@ -102,12 +114,21 @@ public:
     void render(RenderEnv &env) override
     {
         String s = isBound ? bound : substituteParams(tmpl, env.params);
-        env.fb.text(Fonts::byName(fontName), s, x, y, color);
+        env.fb.text(Fonts::byName(fontName), s, (long long)x, (long long)y, color);
     }
     void toJson(JsonObject f) override
     {
-        JsonObject o = f["text"].to<JsonObject>();
+        JsonObject o = addDrawableJsonObject(f, "text");
         o["x"] = x; o["y"] = y; o["text"] = tmpl; o["font"] = fontName;
+        if (objname.length()) o["objname"] = objname;
+        o["color"] = color.toString();
+    }
+    bool equals(const CObj &other) const override
+    {
+        if (other.type() != type()) return false;
+        const TextObj &o = static_cast<const TextObj &>(other);
+        return x == o.x && y == o.y && tmpl == o.tmpl && fontName == o.fontName &&
+               objname == o.objname && color.toString() == o.color.toString();
     }
 };
 
@@ -137,43 +158,72 @@ public:
         String s = isBound ? bound : substituteParams(tmpl, env.params);
         int textW = font.measure(s);
         int textH = font.glyphH();
-        int span = horizontal ? (textW + dx) : (textH + dy); // wrap distance
+        long long span = horizontal ? ((long long)textW + dx)
+                                    : ((long long)textH + dy); // wrap distance
         if (span <= 0) span = 1;
         float ph = fmodf(phase, (float)span);
 
-        int penX = x, penY = y;
-        if (horizontal) penX = x + dx - (int)ph; // enter from right, exit left
-        else            penY = y + dy - (int)ph; // enter from bottom, exit top
+        long long penX = x, penY = y;
+        if (horizontal) penX = (long long)x + dx - (long long)ph; // in from right
+        else            penY = (long long)y + dy - (long long)ph; // in from bottom
 
-        int cx = penX;
+        // All of this runs in 64-bit: x/y/dx/dy come from JSON and a window of
+        // 2^31-1 used to overflow these sums (undefined behaviour) before the
+        // clip below could reject anything.
+        long long winX = x, winY = y;
+        long long winW = dx, winH = dy;
+        long long cx = penX, cy = penY;
         for (uint16_t k = 0; k < s.length(); k++)
         {
             char ch = s[k];
             int gw = font.glyphW(), gh = font.glyphH();
-            for (int gy = 0; gy < gh; gy++)
-                for (int gx = 0; gx < gw; gx++)
-                    if (font.pixel(ch, gx, gy))
-                    {
-                        int ax = (horizontal ? cx + gx : x + gx);
-                        int ay = (horizontal ? y + gy : penY + gy + (int)0);
-                        if (!horizontal) { ax = x + gx; ay = penY + gy; }
-                        // clip to viewport box
-                        if (ax < x || ax >= x + dx || ay < y || ay >= y + dy)
-                            continue;
-                        float u = textW > 1 ? (float)((horizontal ? cx + gx - penX : gx)) / (textW - 1) : 0;
-                        float v = gh > 1 ? (float)gy / (gh - 1) : 0;
-                        env.fb.blend(ax, ay, color.at(u, v));
-                    }
+            // Skip glyphs that have already left the window, and stop once the
+            // pen is past its far edge.
+            long long gx0 = horizontal ? cx : winX;
+            long long gy0 = horizontal ? winY : cy;
+            if (horizontal && gx0 >= winX + winW) break;
+            if (!horizontal && gy0 >= winY + winH) break;
+            if ((horizontal && gx0 + gw > winX) || (!horizontal && gy0 + gh > winY))
+            {
+                for (int gy = 0; gy < gh; gy++)
+                    for (int gx = 0; gx < gw; gx++)
+                        if (font.pixel(ch, gx, gy))
+                        {
+                            long long ax = horizontal ? cx + gx : winX + gx;
+                            long long ay = horizontal ? winY + gy : cy + gy;
+                            // clip to the viewport box, then to the buffer
+                            if (ax < winX || ax >= winX + winW ||
+                                ay < winY || ay >= winY + winH)
+                                continue;
+                            if (ax < 0 || ay < 0 || ax >= env.fb.w || ay >= env.fb.h)
+                                continue;
+                            float u = textW > 1
+                                ? (float)(horizontal ? cx + gx - penX : gx) / (textW - 1)
+                                : 0;
+                            float v = gh > 1 ? (float)gy / (gh - 1) : 0;
+                            env.fb.blend((int)ax, (int)ay, color.at(u, v));
+                        }
+            }
             if (horizontal) cx += font.advance();
-            else            penY += font.advance();
+            else            cy += font.advance();
         }
     }
     void toJson(JsonObject f) override
     {
-        JsonObject o = f["scrolling_text"].to<JsonObject>();
+        JsonObject o = addDrawableJsonObject(f, "scrolling_text");
         o["x"] = x; o["y"] = y; o["dx"] = dx; o["dy"] = dy;
         o["text"] = tmpl; o["font"] = fontName; o["scroll_speed"] = speed;
         o["scroll_direction"] = horizontal ? "horizontal" : "vertical";
+        if (objname.length()) o["objname"] = objname;
+        o["color"] = color.toString();
+    }
+    bool equals(const CObj &other) const override
+    {
+        if (other.type() != type()) return false;
+        const ScrollTextObj &o = static_cast<const ScrollTextObj &>(other);
+        return x == o.x && y == o.y && dx == o.dx && dy == o.dy && tmpl == o.tmpl &&
+               fontName == o.fontName && speed == o.speed && horizontal == o.horizontal &&
+               objname == o.objname && color.toString() == o.color.toString();
     }
 };
 
@@ -186,14 +236,24 @@ public:
     const char *type() const override { return "line"; }
     void render(RenderEnv &env) override
     {
-        env.fb.line(x, y, x + dx, y + dy, thickness, color);
+        // 64-bit so x + dx cannot overflow; FrameBuffer::line clips and caps.
+        env.fb.line((long long)x, (long long)y,
+                    (long long)x + dx, (long long)y + dy, thickness, color);
     }
     void toJson(JsonObject f) override
     {
-        JsonObject o = f["line"].to<JsonObject>();
+        JsonObject o = addDrawableJsonObject(f, "line");
         o["x"] = x; o["y"] = y; o["dx"] = dx; o["dy"] = dy;
         o["thickness"] = thickness;
         if (objname.length()) o["objname"] = objname;
+        o["color"] = color.toString();
+    }
+    bool equals(const CObj &other) const override
+    {
+        if (other.type() != type()) return false;
+        const LineObj &o = static_cast<const LineObj &>(other);
+        return x == o.x && y == o.y && dx == o.dx && dy == o.dy && thickness == o.thickness &&
+               objname == o.objname && color.toString() == o.color.toString();
     }
 };
 
@@ -206,14 +266,39 @@ public:
     const char *type() const override { return "rectangle"; }
     void render(RenderEnv &env) override
     {
-        env.fb.rect(x, y, dx, dy, border, color);
+        env.fb.rect((long long)x, (long long)y, (long long)dx, (long long)dy,
+                    (long long)border, color);
     }
     void toJson(JsonObject f) override
     {
-        JsonObject o = f["rectangle"].to<JsonObject>();
+        JsonObject o = addDrawableJsonObject(f, "rectangle");
         o["x"] = x; o["y"] = y; o["dx"] = dx; o["dy"] = dy; o["border"] = border;
+        if (objname.length()) o["objname"] = objname;
+        o["color"] = color.toString();
+    }
+    bool equals(const CObj &other) const override
+    {
+        if (other.type() != type()) return false;
+        const RectObj &o = static_cast<const RectObj &>(other);
+        return x == o.x && y == o.y && dx == o.dx && dy == o.dy && border == o.border &&
+               objname == o.objname && color.toString() == o.color.toString();
     }
 };
+
+// ——— asset path resolution ———
+// "file.bmp"          → <animDir>/assets/file.bmp        (the drawing animation's own assets)
+// "<animid>/file.bmp" → /anim/<animid>/assets/file.bmp   (any animation's assets)
+// The second form is the only way the API overlay can reach an asset: it has
+// no animation directory, so a bare name would resolve to /assets/<name>,
+// which nothing ever writes to. It also lets one animation reuse another's
+// assets.
+inline String resolveAssetPath(const String &name, const String &animDir)
+{
+    int slash = name.indexOf('/');
+    if (slash > 0)
+        return "/anim/" + name.substring(0, slash) + "/assets/" + name.substring(slash + 1);
+    return animDir + "/assets/" + name;
+}
 
 // ——— asset ———
 class AssetObj : public CObj
@@ -227,12 +312,12 @@ public:
     const char *type() const override { return "asset"; }
     void bind(const Params &, const String &animDir) override
     {
-        boundPath = animDir + "/assets/" + name;
+        boundPath = resolveAssetPath(name, animDir);
     }
     void render(RenderEnv &env) override
     {
         String path = boundPath.length() ? boundPath
-                                          : env.animDir + "/assets/" + name;
+                                          : resolveAssetPath(name, env.animDir);
         Asset a = AssetLoader::load(path);
         if (!a.ok)
         {
@@ -243,8 +328,20 @@ public:
     }
     void toJson(JsonObject f) override
     {
-        JsonObject o = f["asset"].to<JsonObject>();
+        JsonObject o = addDrawableJsonObject(f, "asset");
         o["x"] = x; o["y"] = y; o["name"] = name;
+        if (objname.length()) o["objname"] = objname;
+        if (hasTint) o["color"] = ColorSpec::solid(tint).toString();
+    }
+    bool equals(const CObj &other) const override
+    {
+        if (other.type() != type()) return false;
+        const AssetObj &o = static_cast<const AssetObj &>(other);
+        if (x != o.x || y != o.y || name != o.name || objname != o.objname) return false;
+        if (hasTint != o.hasTint) return false;
+        if (hasTint && (tint.r != o.tint.r || tint.g != o.tint.g || tint.b != o.tint.b || tint.a != o.tint.a))
+            return false;
+        return true;
     }
 };
 
@@ -371,6 +468,30 @@ inline Frame parseFrameObject(JsonObjectConst fo, int frameNo)
     Frame frame;
     frame.duration = fo["duration"] | 0;
     int objNo = 0;
+    // Backwards-compatible parsing: prefer a `drawables` array in which each
+    // element is an object like `{ "text": {...} }`. If that's present,
+    // parse it and return. Otherwise fall back to the older per-key format
+    // (keys are drawable types, possibly arrays of entries).
+    JsonArrayConst drawArr = fo["drawables"];
+    if (!drawArr.isNull())
+    {
+        for (JsonVariantConst v : drawArr)
+        {
+            JsonObjectConst item = v.as<JsonObjectConst>();
+            // find the first key in the item (the drawable type)
+            for (JsonPairConst kv : item)
+            {
+                String key = kv.key().c_str();
+                objNo++;
+                String id = String(frameNo) + ":" + String(objNo);
+                auto obj = parseDrawableObj(key, kv.value().as<JsonObjectConst>(), id);
+                if (obj) frame.drawables.push_back(obj);
+                break; // only one key per array element
+            }
+        }
+        return frame;
+    }
+
     for (JsonPairConst kv : fo)
     {
         String key = kv.key().c_str();
@@ -408,10 +529,25 @@ inline Frame parseFrameObject(JsonObjectConst fo, int frameNo)
             continue;
         }
 
-        objNo++;
-        String id = String(frameNo) + ":" + String(objNo);
-        auto obj = parseDrawableObj(key, kv.value(), id);
-        if (obj) frame.drawables.push_back(obj);
+        // Support either a single object value or an array of objects for the
+        // same key type.
+        if (kv.value().is<JsonArrayConst>())
+        {
+            for (JsonObjectConst e : kv.value().as<JsonArrayConst>())
+            {
+                objNo++;
+                String id = String(frameNo) + ":" + String(objNo);
+                auto obj = parseDrawableObj(key, e, id);
+                if (obj) frame.drawables.push_back(obj);
+            }
+        }
+        else
+        {
+            objNo++;
+            String id = String(frameNo) + ":" + String(objNo);
+            auto obj = parseDrawableObj(key, kv.value(), id);
+            if (obj) frame.drawables.push_back(obj);
+        }
     }
     return frame;
 }

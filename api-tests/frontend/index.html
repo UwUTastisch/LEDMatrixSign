@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>LEDMatrixSign Test Frontend</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 20px; }
+      #canvas { image-rendering: pixelated; border: 1px solid #333; }
+    </style>
+  </head>
+  <body>
+    <h1>LEDMatrixSign Test Frontend</h1>
+    <label>Width: <input id="width" type="number" value="48" /></label>
+    <label>Height: <input id="height" type="number" value="48" /></label>
+    <button id="apply">Apply</button>
+    <p>WebSocket status: <span id="status">disconnected</span></p>
+    <canvas id="canvas" width="48" height="48"></canvas>
+
+    <script>
+      const status = document.getElementById('status');
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const widthInput = document.getElementById('width');
+      const heightInput = document.getElementById('height');
+      const applyBtn = document.getElementById('apply');
+
+      let ws;
+
+      function connect() {
+        if (ws) ws.close();
+        ws = new WebSocket((location.protocol === 'https:'? 'wss://' : 'ws://') + location.host + '/ws');
+        ws.onopen = () => { status.textContent = 'connected'; ws.send('get'); };
+        ws.onclose = () => { status.textContent = 'disconnected'; };
+        ws.onmessage = (ev) => {
+          try {
+            const obj = JSON.parse(ev.data);
+            if (obj.png) {
+              const img = new Image();
+              img.onload = () => {
+                // resize canvas to configured size but scale up for visibility
+                const w = obj.width || parseInt(widthInput.value, 10) || 48;
+                const h = obj.height || parseInt(heightInput.value, 10) || 48;
+                canvas.width = w;
+                canvas.height = h;
+                // draw to temporary canvas then scale
+                ctx.clearRect(0,0,canvas.width,canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                // upscale for visibility
+                canvas.style.width = (canvas.width * 8) + 'px';
+                canvas.style.height = (canvas.height * 8) + 'px';
+              };
+              img.src = 'data:image/png;base64,' + obj.png;
+            }
+          } catch(e) { console.error(e); }
+        };
+      }
+
+      applyBtn.addEventListener('click', () => {
+        const w = parseInt(widthInput.value, 10);
+        const h = parseInt(heightInput.value, 10);
+        // update canvas and request a fresh frame
+        canvas.width = w; canvas.height = h;
+        canvas.style.width = (w * 8) + 'px'; canvas.style.height = (h * 8) + 'px';
+        // try to fetch framebuffer/size and update if available
+        fetch('/framebuffer/size').then(r => r.json()).then(js => {
+          // nothing: server may be using different size
+          ws.send('get');
+        }).catch(()=>{ ws.send('get'); });
+      });
+
+      connect();
+    </script>
+  </body>
+</html>

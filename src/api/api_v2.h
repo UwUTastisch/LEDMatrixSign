@@ -33,24 +33,49 @@ public:
     // ——— small helpers ———
     using BodyDone = std::function<void(AsyncWebServerRequest *, uint8_t *, size_t)>;
 
+    // Largest body we will buffer. An asset upload is base64, so this allows
+    // roughly a 48 KB BMP; bigger bodies are refused instead of being
+    // collected until the heap runs out.
+    static const size_t kMaxBodyBytes = 64 * 1024;
+
     void onBody(const char *path, WebRequestMethodComposite method, BodyDone done)
     {
         server.on(
-            path, method, [](AsyncWebServerRequest *) {}, nullptr,
+            path, method,
+            [](AsyncWebServerRequest *req)
+            {
+                // Reached with no body handler run at all: answer instead of
+                // leaving the client waiting for a reply that never comes.
+                if (req->contentLength() == 0)
+                    req->send(400, "application/json", "{\"error\":\"empty body\"}");
+            },
+            nullptr,
             [done](AsyncWebServerRequest *req, uint8_t *data, size_t len,
                    size_t index, size_t total)
             {
+                // The buffer is plain malloc'd memory on purpose: the server
+                // frees _tempObject with free() when the request is destroyed,
+                // so an upload cut short by a disconnect is released rather
+                // than leaked (a new'd std::vector would leak its contents and
+                // be freed with the wrong call).
+                if (total > kMaxBodyBytes)
+                {
+                    if (index == 0)
+                        err(req, 413, "body too large");
+                    return;
+                }
                 if (index == 0)
                 {
-                    req->_tempObject = new std::vector<uint8_t>();
-                    ((std::vector<uint8_t> *)req->_tempObject)->reserve(total);
+                    req->_tempObject = malloc(total + 1);
+                    if (!req->_tempObject) { err(req, 500, "out of memory"); return; }
                 }
-                auto *buf = (std::vector<uint8_t> *)req->_tempObject;
-                buf->insert(buf->end(), data, data + len);
+                if (!req->_tempObject) return; // earlier failure; drop the rest
+                if (index + len > total) return;
+                memcpy((uint8_t *)req->_tempObject + index, data, len);
                 if (index + len == total)
                 {
-                    done(req, buf->data(), buf->size());
-                    delete buf;
+                    done(req, (uint8_t *)req->_tempObject, total);
+                    free(req->_tempObject);
                     req->_tempObject = nullptr;
                 }
             });
@@ -62,6 +87,16 @@ public:
         serializeJson(doc, out);
         req->send(code, "application/json", out);
     }
+    // animname/filename become path components, so refuse anything that could
+    // climb out of /anim/<id>/.
+    static bool safeName(const String &n)
+    {
+        if (n.isEmpty() || n.length() > 64) return false;
+        if (n.indexOf('/') >= 0 || n.indexOf('\\') >= 0) return false;
+        if (n == "." || n == ".." || n.indexOf("..") >= 0) return false;
+        return true;
+    }
+
     static void err(AsyncWebServerRequest *req, int code, const char *msg)
     {
         req->send(code, "application/json", String("{\"error\":\"") + msg + "\"}");
@@ -100,16 +135,20 @@ private:
                    String animname = in["animname"] | "";
                    String filename = in["filename"] | "anim.json";
                    if (animname.isEmpty()) { err(req, 400, "missing animname"); return; }
+                   if (!safeName(animname)) { err(req, 400, "bad animname"); return; }
 
                    JsonDocument out;
-                   JsonObject root = out.to<JsonObject>();
-                   JsonArray frames = root["frames"].to<JsonArray>();
-                   JsonObject fo = frames.add<JsonObject>();
-                   for (auto &o : factory.api.live) o->toJson(fo);
-                   fo["duration"] = 1000;
-
                    String text;
-                   serializeJsonPretty(out, text);
+                   {
+                       // The render loop may be rasterising this layer.
+                       CompositorGuard g(factory.lock);
+                       JsonObject root = out.to<JsonObject>();
+                       JsonArray frames = root["frames"].to<JsonArray>();
+                       JsonObject fo = frames.add<JsonObject>();
+                       for (auto &o : factory.api.live) o->toJson(fo);
+                       fo["duration"] = 1000;
+                       serializeJsonPretty(out, text);
+                   }
                    Storage::mkdirs(Storage::animDir(animname));
                    Storage::mkdirs(Storage::assetsDir(animname));
                    String path = Storage::animDir(animname) + "/" + filename;
@@ -124,28 +163,53 @@ private:
         // GET /framebuffer/get — composited output as base64 BGRA8888
         server.on("/framebuffer/get", HTTP_GET, [this](AsyncWebServerRequest *req)
                   {
-            const FrameBuffer &fb = factory.out;
-            size_t n = (size_t)fb.w * fb.h * 4;
-            std::vector<uint8_t> raw(n);
-            for (size_t i = 0; i < fb.px.size(); i++) {
-                const Rgba &c = fb.px[i];
-                raw[i*4+0]=c.b; raw[i*4+1]=c.g; raw[i*4+2]=c.r; raw[i*4+3]=c.a;
+            // Snapshot the pixels under the lock (loop() writes factory.out
+            // every frame), then encode and stream without holding it.
+            int w, h;
+            std::vector<uint8_t> raw;
+            {
+                CompositorGuard g(factory.lock);
+                const FrameBuffer &fb = factory.out;
+                w = fb.w; h = fb.h;
+                raw.resize((size_t)w * h * 4);
+                for (size_t i = 0; i < fb.px.size(); i++) {
+                    const Rgba &c = fb.px[i];
+                    raw[i*4+0]=c.b; raw[i*4+1]=c.g; raw[i*4+2]=c.r; raw[i*4+3]=c.a;
+                }
             }
-            unsigned int encLen = encode_base64_length(n);
-            std::vector<unsigned char> enc(encLen + 1);
-            unsigned int actual = encode_base64(raw.data(), n, enc.data());
-            enc[actual] = '\0';
-            JsonDocument doc;
-            doc["width"] = fb.w; doc["height"] = fb.h;
-            doc["format"] = "BGRA8888";
-            doc["data"] = (char*)enc.data();
-            sendJson(req, 200, doc); });
+            // Base64 straight into the response stream. The old version held
+            // the raw bytes, the encoded string, a JsonDocument copy and the
+            // serialised body all at once — on a 128x64 panel that is ~200 KB
+            // of heap for one request, which is more than an ESP32 can spare.
+            static const char *b64 =
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            AsyncResponseStream *res = req->beginResponseStream("application/json");
+            res->printf("{\"width\":%d,\"height\":%d,\"format\":\"BGRA8888\",\"data\":\"",
+                        w, h);
+            char chunk[257];
+            size_t out = 0;
+            for (size_t i = 0; i < raw.size(); i += 3)
+            {
+                uint32_t v = (uint32_t)raw[i] << 16;
+                size_t have = raw.size() - i;
+                if (have > 1) v |= (uint32_t)raw[i+1] << 8;
+                if (have > 2) v |= raw[i+2];
+                chunk[out++] = b64[(v >> 18) & 63];
+                chunk[out++] = b64[(v >> 12) & 63];
+                chunk[out++] = have > 1 ? b64[(v >> 6) & 63] : '=';
+                chunk[out++] = have > 2 ? b64[v & 63] : '=';
+                if (out >= 252) { chunk[out] = '\0'; res->print(chunk); out = 0; }
+            }
+            if (out) { chunk[out] = '\0'; res->print(chunk); }
+            res->print("\"}");
+            req->send(res); });
 
         // GET /framebuffer/getcomposition — live object trees of both layers
         server.on("/framebuffer/getcomposition", HTTP_GET,
                   [this](AsyncWebServerRequest *req)
                   {
             JsonDocument doc;
+            CompositorGuard g(factory.lock);
             doc["width"] = factory.out.w; doc["height"] = factory.out.h;
             auto dump = [](JsonArray arr, std::vector<std::shared_ptr<CObj>> &live){
                 for (auto &o : live) {
@@ -178,6 +242,7 @@ private:
                    if (deserializeJson(in, data, len)) { err(req, 400, "bad json"); return; }
                    String animname = in["animname"] | "";
                    if (animname.isEmpty()) { err(req, 400, "missing animname"); return; }
+                   if (!safeName(animname)) { err(req, 400, "bad animname"); return; }
                    JsonVariantConst anim = in["anim"];
                    if (anim.isNull()) { err(req, 400, "missing anim"); return; }
                    String text;
@@ -201,6 +266,8 @@ private:
                    String b64 = in["data"] | "";
                    if (animname.isEmpty() || filename.isEmpty() || b64.isEmpty())
                    { err(req, 400, "missing animname/filename/data"); return; }
+                   if (!safeName(animname) || !safeName(filename))
+                   { err(req, 400, "bad animname/filename"); return; }
                    unsigned int outLen = decode_base64_length(
                        (const unsigned char *)b64.c_str(), b64.length());
                    std::vector<uint8_t> bytes(outLen);
@@ -277,7 +344,10 @@ private:
                                    ? String(kv.value().as<const char *>())
                                    : String(kv.value().as<float>());
 
-                   factory.player.start(anim, overrides, cycles, factory.primary);
+                   {
+                       CompositorGuard g(factory.lock);
+                       factory.player.start(anim, overrides, cycles, factory.primary);
+                   }
                    req->send(200, "application/json",
                              String("{\"status\":\"started\",\"animname\":\"") + animname + "\"}");
                });
@@ -289,7 +359,10 @@ private:
                    JsonDocument in;
                    if (deserializeJson(in, data, len)) { err(req, 400, "bad json"); return; }
                    float speed = in["speed"] | 1.0f;
-                   factory.player.setSpeedScale(speed);
+                   {
+                       CompositorGuard g(factory.lock);
+                       factory.player.setSpeedScale(speed);
+                   }
                    req->send(200, "application/json",
                              String("{\"status\":\"ok\",\"speed\":") + String(speed, 3) + "}");
                });
@@ -297,13 +370,14 @@ private:
         // POST /anim/stop
         server.on("/anim/stop", HTTP_POST, [this](AsyncWebServerRequest *req)
                   {
-            factory.player.stop(factory.primary);
+            { CompositorGuard g(factory.lock); factory.player.stop(factory.primary); }
             req->send(200, "application/json", "{\"status\":\"stopped\"}"); });
 
         // GET /anim/status
         server.on("/anim/status", HTTP_GET, [this](AsyncWebServerRequest *req)
                   {
             JsonDocument doc;
+            CompositorGuard g(factory.lock);
             doc["running"] = factory.player.running();
             doc["paused"] = factory.player.isPaused();
             doc["speed"] = factory.player.speedScale();

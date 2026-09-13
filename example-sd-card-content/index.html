@@ -1,479 +1,5034 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>LED Matrix Sign — Control</title>
-<style>
-  /* ── tokens ───────────────────────────────────────────────────────────── */
-  :root{
-    --bg:#0a0b0d;        /* unlit board */
-    --surface:#14161b;
-    --surface-2:#1b1e25;
-    --line:#262b34;
-    --text:#e7eaf0;
-    --muted:#8a92a0;
-    --amber:#ffb000;     /* LED accent, used with restraint */
-    --green:#36e06b;
-    --danger:#ff5c57;
-    --mono: ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
-    --sans: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    --r:10px;
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LED Matrix Sign</title>
+    <style>
+:root {
+  --bg: #07141f;
+  --panel: rgba(12, 22, 33, 0.96);
+  --panel-alt: #112235;
+  --stroke: rgba(142, 170, 204, 0.28);
+  --muted: #a9bfd9;
+  --text: #edf5ff;
+  --accent: #65ccff;
+  --accent-2: #77f1d0;
+  --danger: #ff7d7d;
+  --shadow: rgba(4, 9, 18, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  font-size: 14px;
+  background: linear-gradient(180deg, #050d17 0%, #0a1627 100%);
+  color: var(--text);
+}
+
+body {
+  padding: 8px;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--stroke);
+  background: #1b2d45;
+  color: var(--text);
+  border-radius: 7px;
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover {
+  border-color: rgba(142, 170, 204, 0.5);
+}
+
+button.primary {
+  background: linear-gradient(135deg, var(--accent), #4eb5ff);
+  color: #081a2d;
+  font-weight: 700;
+}
+
+button.danger {
+  background: rgba(255, 125, 125, 0.12);
+  border-color: rgba(255, 125, 125, 0.35);
+  color: #ffd7d7;
+}
+
+.icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  flex: none;
+}
+
+.icon-button.small {
+  width: 26px;
+  height: 26px;
+  font-size: 0.85rem;
+}
+
+.upload-button {
+  border: 1px solid var(--stroke);
+  background: #1b2d45;
+  color: var(--text);
+  border-radius: 7px;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.upload-button:hover {
+  border-color: rgba(142, 170, 204, 0.5);
+}
+
+input, select, textarea {
+  width: 100%;
+  background: rgba(17, 33, 53, 0.92);
+  border: 1px solid var(--stroke);
+  border-radius: 7px;
+  color: var(--text);
+  padding: 0.4rem 0.55rem;
+}
+
+.app-shell {
+  width: 100%;
+  height: calc(100vh - 16px);
+  max-width: 1500px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  box-shadow: 0 10px 22px var(--shadow);
+  padding: 8px;
+}
+
+.topbar {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: #061a2b;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+}
+
+.topbar-title {
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.conn-state {
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.conn-state .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffb454;
+  flex: none;
+}
+
+.conn-state.ok .dot {
+  background: var(--accent-2);
+}
+
+.conn-state.error .dot {
+  background: var(--danger);
+}
+
+.config-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+
+.range-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.range-inline input {
+  flex: 1;
+}
+
+/* ---------- Main workspace: canvas is the dominant element, everything
+   else lives in a tabbed card beside it. On mobile it stacks instead. ---------- */
+
+.workspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 8px;
+  min-height: 0;
+}
+
+.canvas-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tabs-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.tabs-bar {
+  display: flex;
+  flex: none;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--stroke);
+}
+
+.tab-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  border: none;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.72rem;
+  padding: 0.6rem 0.3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  background: rgba(101, 204, 255, 0.06);
+}
+
+.tabs-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+.tab-panel {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tab-panel.active {
+  display: flex;
+}
+
+.hint-text {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.panel-header h3 {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.count-pill {
+  background: rgba(101, 204, 255, 0.14);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* ---------- Draw tab ---------- */
+
+.tool-buttons {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.history-row {
+  display: flex;
+  gap: 6px;
+}
+
+.history-row button {
+  flex: 1;
+}
+
+.history-row button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.68rem;
+}
+
+.tool {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  background: rgba(27, 44, 68, 0.96);
+  flex: none;
+}
+
+.tool.active {
+  background: linear-gradient(135deg, #244d7d, #1c5b9e);
+  border-color: rgba(92, 197, 255, 0.75);
+}
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.color-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.24);
+  padding: 0;
+  flex: none;
+}
+
+.swatch.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(101, 204, 255, 0.35);
+}
+
+#customColor {
+  width: 34px;
+  min-width: 34px;
+  height: 28px;
+  padding: 0;
+  flex: none;
+}
+
+.tab-field {
+  display: grid;
+  gap: 5px;
+}
+
+/* Tool-specific settings are toggled with the `hidden` attribute; without
+   this rule the flex/grid display declared on .tab-field would win the
+   cascade over the UA [hidden] rule and the fields would stay visible. */
+.tab-field[hidden] {
+  display: none;
+}
+
+.tab-field span,
+.tab-field label {
+  color: var(--muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+}
+
+.asset-settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.tab-divider {
+  height: 1px;
+  background: var(--stroke);
+  margin: 2px 0;
+}
+
+/* ---------- Canvas ---------- */
+
+.canvas-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: auto;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  background:
+    linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%) 0 0 / 16px 16px,
+    linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%) 8px 8px / 16px 16px,
+    #050d17;
+  padding: 10px;
+}
+
+.canvas-frame {
+  /* margin:auto (rather than align-items/justify-content:center on the
+     parent) keeps the frame scrollable/pannable in every direction once it
+     grows past the stage — flex centering otherwise clips the "before" side
+     of any overflow and you can never scroll back to it. */
+  position: relative;
+  margin: auto;
+  width: 512px;
+  aspect-ratio: 32 / 16;
+  flex: none;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(150, 184, 223, 0.25), 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+#liveCanvas,
+#frameCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 6px;
+  touch-action: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+#liveCanvas {
+  z-index: 0;
+  background: #050d17;
+  pointer-events: none;
+}
+
+#frameCanvas {
+  z-index: 1;
+  background: transparent;
+  cursor: crosshair;
+}
+
+#frameCanvas.pan-mode {
+  cursor: grab;
+}
+
+#frameCanvas.panning {
+  cursor: grabbing;
+}
+
+.footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  flex-wrap: wrap;
+}
+
+.footer-actions input {
+  flex: 1;
+  min-width: 100px;
+}
+
+.footer-actions button {
+  flex: 1;
+}
+
+.nowrap-actions {
+  flex-wrap: nowrap;
+}
+
+/* ---------- Lists shared across tabs ---------- */
+
+.tree-list,
+.asset-list,
+.file-list,
+.animation-queue {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tree-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: rgba(20, 38, 59, 0.9);
+  border: 1px solid var(--stroke);
+  border-radius: 7px;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.tree-item:hover {
+  border-color: rgba(101, 204, 255, 0.45);
+}
+
+.tree-item .type-badge {
+  flex: none;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: rgba(101, 204, 255, 0.12);
+  border-radius: 5px;
+  padding: 0.12rem 0.35rem;
+}
+
+.tree-item .obj-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-item .edit-hint {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.asset-item,
+.file-row,
+.queue-item {
+  background: rgba(20, 38, 59, 0.9);
+  border: 1px solid var(--stroke);
+  border-radius: 7px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.asset-item {
+  display: flex;
+  width: 100%;
+  text-align: left;
+}
+
+.asset-item.selected {
+  border-color: var(--accent);
+  background: rgba(101, 204, 255, 0.1);
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.file-row small {
+  color: var(--muted);
+}
+
+.empty {
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding: 0.4rem 0.1rem;
+}
+
+/* ---------- Files tab ---------- */
+
+.status-message:empty {
+  display: none;
+}
+
+.fs-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.fs-status strong {
+  color: var(--text);
+}
+
+.status-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+.status-pill.ok {
+  background: rgba(119, 241, 208, 0.14);
+  color: #cafef0;
+}
+
+.status-pill.error {
+  background: rgba(255, 125, 125, 0.14);
+  color: #ffd6d6;
+}
+
+/* ---------- Animate tab ---------- */
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.queue-row select {
+  flex: 1;
+  min-width: 100px;
+}
+
+.status-badge {
+  display: inline-block;
+  border-radius: 999px;
+  background: rgba(98, 160, 255, 0.14);
+  border: 1px solid rgba(98, 160, 255, 0.3);
+  color: #d9ebff;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.7rem;
+  flex: none;
+}
+
+.status-badge.running {
+  background: rgba(119, 241, 208, 0.14);
+  border-color: rgba(119, 241, 208, 0.35);
+  color: #cafef0;
+}
+
+
+/* ---------- Select tool ---------- */
+
+#frameCanvas.over-object { cursor: grab; }
+#frameCanvas.dragging-object { cursor: grabbing; }
+
+.selection-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  background: rgba(20, 38, 59, 0.9);
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  min-height: 32px;
+}
+
+.selection-info strong {
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#selectSettings .footer-actions button {
+  flex: 1;
+  font-size: 0.72rem;
+}
+
+/* ---------- Modals ---------- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(1, 5, 11, 0.7);
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  z-index: 30;
+}
+
+.modal.hidden {
+  display: none;
+}
+
+.modal-card {
+  width: min(420px, 92vw);
+  background: #0d1b2a;
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.5);
+  padding: 12px;
+  max-height: 88vh;
+  overflow: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.object-edit-fields {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.object-edit-fields .tab-field select,
+.object-edit-fields .tab-field input {
+  width: 100%;
+}
+
+.asset-editor-body {
+  display: grid;
+  gap: 10px;
+}
+
+#assetEditorCanvas {
+  width: 100%;
+  max-width: 240px;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+  image-rendering: pixelated;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  background: #030b15;
+}
+
+
+/* ======================================================================
+   Additions for the single-file build
+   ====================================================================== */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  color: var(--accent-2);
+}
+
+textarea {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+input[type="color"] {
+  padding: 2px;
+  height: 30px;
+}
+
+/* ---------- Canvas footer ---------- */
+
+.canvas-footer {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 6px 4px 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.canvas-footer .playing-info {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-footer .playing-info.running {
+  color: var(--accent-2);
+}
+
+/* ---------- Small form pieces ---------- */
+
+.mini-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mini-field > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.mini-field.grow { flex: 1; }
+.mini-field.narrow { width: 72px; flex: none; }
+.mini-field.wide { width: 100%; }
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: end;
+}
+
+.check-field {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--stroke);
+  border-radius: 7px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.segmented button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.74rem;
+}
+
+.segmented button + button {
+  border-left: 1px solid var(--stroke);
+}
+
+.segmented button.active {
+  background: rgba(101, 204, 255, 0.16);
+  color: var(--text);
+}
+
+.gradient-row {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+
+.gradient-row[hidden] { display: none; }
+.gradient-row .mini-field { flex: 1; }
+.gradient-row button { flex: none; height: 30px; }
+
+.color-preview {
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background-image:
+    linear-gradient(45deg, #1d2b3c 25%, transparent 25%, transparent 75%, #1d2b3c 75%),
+    linear-gradient(45deg, #1d2b3c 25%, transparent 25%, transparent 75%, #1d2b3c 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.color-preview::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--swatch, #ff0000);
+}
+
+.header-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.header-actions button {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.6rem;
+}
+
+.count-pill.muted {
+  background: rgba(169, 191, 217, 0.12);
+  color: var(--muted);
+}
+
+.raw-json {
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.raw-json summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.raw-json[open] {
+  display: grid;
+  gap: 8px;
+}
+
+.raw-json[open] summary {
+  margin-bottom: 2px;
+}
+
+/* ---------- Objects tab ---------- */
+
+.tree-item.readonly {
+  cursor: default;
+  opacity: 0.8;
+}
+
+.tree-item.readonly:hover {
+  border-color: var(--stroke);
+}
+
+.tree-item .obj-id {
+  flex: none;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Assets tab ---------- */
+
+.asset-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.asset-group h4 {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+}
+
+.asset-card {
+  display: grid;
+  gap: 4px;
+  background: rgba(20, 38, 59, 0.9);
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 5px;
+  font-size: 0.7rem;
+  min-width: 0;
+}
+
+.asset-card.selected {
+  border-color: var(--accent);
+  background: rgba(101, 204, 255, 0.1);
+}
+
+.asset-card .thumb {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 5px;
+  border: none;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background-color: #0b1624;
+  background-image:
+    linear-gradient(45deg, #13233a 25%, transparent 25%, transparent 75%, #13233a 75%),
+    linear-gradient(45deg, #13233a 25%, transparent 25%, transparent 75%, #13233a 75%);
+  background-size: 10px 10px;
+  background-position: 0 0, 5px 5px;
+  overflow: hidden;
+}
+
+.asset-card .thumb canvas {
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.asset-card .asset-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-card .asset-meta {
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.asset-card .asset-meta.warn {
+  color: #ffc98a;
+}
+
+.asset-card .asset-actions {
+  display: flex;
+  gap: 3px;
+}
+
+.asset-card .asset-actions button,
+.asset-card .asset-actions a {
+  flex: 1;
+  padding: 0.15rem 0;
+  font-size: 0.66rem;
+  min-height: 22px;
+}
+
+.asset-card .asset-meta button {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  padding: 0.15rem 0;
+  font-size: 0.66rem;
+}
+
+/* ---------- Animate tab ---------- */
+
+.params-list {
+  display: grid;
+  gap: 6px;
+}
+
+.param-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.8fr) 1.4fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.param-row code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.builder-row {
+  display: flex;
+  gap: 6px;
+  align-items: end;
+}
+
+.builder-row .mini-field:first-child:not(.grow) {
+  flex: 1;
+}
+
+.builder-row > button {
+  flex: none;
+  height: 31px;
+}
+
+.timeline-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.timeline-step {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 18px 48px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  background: rgba(20, 38, 59, 0.9);
+  border: 1px solid var(--stroke);
+  border-radius: 8px;
+  padding: 5px 6px;
+  font-size: 0.74rem;
+}
+
+.timeline-step::before {
+  content: counter(step);
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-step .step-thumb {
+  width: 48px;
+  height: 32px;
+  border-radius: 4px;
+  background: #050d17;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  color: var(--accent);
+  font-size: 1rem;
+}
+
+.timeline-step .step-thumb canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.timeline-step .step-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.timeline-step .step-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-step .step-body input {
+  padding: 0.12rem 0.35rem;
+  font-size: 0.7rem;
+  width: 64px;
+}
+
+.timeline-step .step-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 5px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.timeline-step .step-sub button {
+  padding: 0.1rem 0.45rem;
+  font-size: 0.66rem;
+}
+
+.timeline-step .step-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 24px);
+  gap: 3px;
+}
+
+.timeline-step .step-actions button {
+  padding: 0;
+  height: 22px;
+  font-size: 0.7rem;
+}
+
+.timeline-step .step-actions .wide-action {
+  grid-column: span 3;
+  font-size: 0.64rem;
+}
+
+.timeline-list:empty::after {
+  content: "No steps yet.";
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding: 0.2rem 0.1rem;
+}
+
+/* ---------- Files tab ---------- */
+
+.fs-bar {
+  flex-basis: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(169, 191, 217, 0.14);
+  overflow: hidden;
+}
+
+.fs-bar > i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+}
+
+.file-row .file-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.file-row .file-actions button,
+.file-row .file-actions a {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.72rem;
+}
+
+.file-row .file-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-row.playing {
+  border-color: rgba(119, 241, 208, 0.5);
+}
+
+a.link-button {
+  border: 1px solid var(--stroke);
+  background: #1b2d45;
+  color: var(--text);
+  border-radius: 7px;
+  text-decoration: none;
+  display: inline-grid;
+  place-items: center;
+}
+
+/* ---------- Modals ---------- */
+
+.modal-card.wide {
+  width: min(620px, 94vw);
+}
+
+.device-info {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--text);
+}
+
+.device-info dt {
+  color: var(--muted);
+}
+
+.device-info dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.json-editor {
+  width: 100%;
+  min-height: 260px;
+  margin: 8px 0;
+}
+
+.problems {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.72rem;
+}
+
+.problems li {
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+}
+
+.problems li.error {
+  background: rgba(255, 125, 125, 0.12);
+  color: #ffd6d6;
+}
+
+.problems li.warn {
+  background: rgba(255, 180, 84, 0.12);
+  color: #ffe2bd;
+}
+
+.problems li.ok {
+  background: rgba(119, 241, 208, 0.12);
+  color: #cafef0;
+}
+
+.asset-editor-tools {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.asset-editor-tools > button {
+  height: 31px;
+}
+
+.asset-editor-stage {
+  display: grid;
+  place-items: center;
+  background: #030b15;
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  padding: 8px;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+#assetEditorCanvas {
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: auto;
+  border: none;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* ---------- Toasts ---------- */
+
+.toast-host {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  display: grid;
+  gap: 6px;
+  z-index: 50;
+  max-width: min(380px, calc(100vw - 28px));
+  pointer-events: none;
+}
+
+.toast {
+  border-radius: 9px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.78rem;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--stroke);
+  background: #0f2033;
+  color: var(--text);
+  animation: toast-in 160ms ease-out;
+}
+
+.toast.ok { border-color: rgba(119, 241, 208, 0.4); }
+.toast.error { border-color: rgba(255, 125, 125, 0.5); background: #2a1419; color: #ffe0e0; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}
+
+@media (max-width: 900px) {
+  html, body {
+    height: auto;
   }
-  *{box-sizing:border-box}
-  html,body{margin:0}
-  body{
-    background:
-      radial-gradient(1200px 600px at 70% -10%, #14171d 0%, transparent 60%),
-      var(--bg);
-    color:var(--text); font-family:var(--sans);
-    -webkit-font-smoothing:antialiased; line-height:1.5;
-    min-height:100vh;
-  }
-  a{color:var(--amber)}
-  .wrap{max-width:1100px; margin:0 auto; padding:22px 18px 60px}
 
-  /* ── masthead ─────────────────────────────────────────────────────────── */
-  header.bar{display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:22px}
-  .logo{display:flex; align-items:center; gap:11px}
-  .logo .dots{display:grid; grid-template-columns:repeat(3,7px); grid-auto-rows:7px; gap:3px}
-  .logo .dots i{border-radius:50%; background:#2a2f39}
-  .logo .dots i.on{background:var(--amber); box-shadow:0 0 6px rgba(255,176,0,.8)}
-  .logo h1{font:600 16px/1 var(--mono); letter-spacing:.02em; margin:0}
-  .logo small{display:block; color:var(--muted); font:500 11px/1.4 var(--mono); letter-spacing:.14em; text-transform:uppercase; margin-top:4px}
-  .host{margin-left:auto; display:flex; align-items:center; gap:8px}
-  .host label{color:var(--muted); font:500 11px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase}
-  .host input{width:190px}
-
-  input,select,textarea,button{font-family:var(--sans); font-size:14px}
-  input,select,textarea{
-    background:var(--surface-2); color:var(--text); border:1px solid var(--line);
-    border-radius:8px; padding:8px 10px; width:100%;
-  }
-  input:focus,select:focus,textarea:focus,button:focus-visible{
-    outline:2px solid var(--amber); outline-offset:1px; border-color:transparent;
-  }
-  textarea{font-family:var(--mono); font-size:12.5px; resize:vertical; min-height:104px}
-  label.field{display:block; margin:0 0 10px}
-  label.field > span{display:block; color:var(--muted); font:500 11px/1.4 var(--mono); letter-spacing:.1em; text-transform:uppercase; margin-bottom:5px}
-
-  button{
-    background:var(--surface-2); color:var(--text); border:1px solid var(--line);
-    border-radius:8px; padding:9px 14px; cursor:pointer; font-weight:550;
-    transition:border-color .12s, background .12s, transform .04s;
-  }
-  button:hover{border-color:#39404c}
-  button:active{transform:translateY(1px)}
-  button.primary{background:var(--amber); color:#1a1304; border-color:transparent}
-  button.primary:hover{background:#ffbe2e}
-  button.ghost{background:transparent}
-  button.danger{color:var(--danger); border-color:#3a2a2c}
-  button.danger:hover{border-color:var(--danger)}
-  .row{display:flex; gap:9px; flex-wrap:wrap}
-
-  /* ── layout ───────────────────────────────────────────────────────────── */
-  .grid{display:grid; grid-template-columns:minmax(0,420px) minmax(0,1fr); gap:18px; align-items:start}
-  @media(max-width:820px){ .grid{grid-template-columns:1fr} .host input{width:140px} }
-  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:16px}
-  .card + .card{margin-top:18px}
-  .eyebrow{color:var(--muted); font:600 11px/1 var(--mono); letter-spacing:.16em; text-transform:uppercase; margin:0 0 13px}
-
-  /* ── signature: live LED preview ──────────────────────────────────────── */
-  .screen{
-    background:#050608; border:1px solid #20242c; border-radius:12px;
-    padding:14px; display:flex; justify-content:center; align-items:center;
-    aspect-ratio:1/1; overflow:hidden;
-  }
-  #panel{image-rendering:pixelated; width:100%; height:100%; display:block}
-  .meta{display:flex; gap:18px; flex-wrap:wrap; margin-top:13px; font-family:var(--mono); font-size:12px; color:var(--muted)}
-  .meta b{color:var(--text); font-weight:600}
-  .dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#3a3f49; margin-right:6px; vertical-align:middle}
-  .dot.live{background:var(--green); box-shadow:0 0 7px rgba(54,224,107,.8)}
-  @media (prefers-reduced-motion:no-preference){
-    .dot.live{animation:pulse 1.6s ease-in-out infinite}
-    @keyframes pulse{50%{opacity:.45}}
+  body {
+    padding: 6px;
   }
 
-  /* brightness */
-  .bright{display:flex; align-items:center; gap:12px}
-  .bright input[type=range]{accent-color:var(--amber); padding:0}
-  .bright output{font-family:var(--mono); font-size:13px; min-width:34px; text-align:right; color:var(--text)}
+  .app-shell {
+    height: auto;
+  }
 
-  /* ── tabs ─────────────────────────────────────────────────────────────── */
-  .tabs{display:flex; gap:4px; margin-bottom:14px; border-bottom:1px solid var(--line)}
-  .tabs button{background:none; border:none; border-bottom:2px solid transparent; border-radius:0; color:var(--muted); padding:8px 12px; font-family:var(--mono); font-size:12.5px; letter-spacing:.04em}
-  .tabs button[aria-selected=true]{color:var(--text); border-bottom-color:var(--amber)}
-  .tab{display:none}
-  .tab.active{display:block}
+  .topbar {
+    grid-template-columns: auto 1fr auto;
+  }
 
-  /* anim list */
-  .anim{border:1px solid var(--line); border-radius:9px; padding:11px 12px; margin-bottom:9px; background:var(--surface-2)}
-  .anim .id{font-family:var(--mono); font-size:13px; font-weight:600; word-break:break-all}
-  .anim .assets{color:var(--muted); font-family:var(--mono); font-size:11px; margin-top:3px}
-  .anim .ctl{display:flex; gap:7px; margin-top:10px; flex-wrap:wrap; align-items:center}
-  .anim input{width:74px}
-  .pill{font-family:var(--mono); font-size:11px; color:var(--amber); border:1px solid #3a3115; background:#1d1809; padding:2px 7px; border-radius:999px}
+  .conn-state {
+    display: none;
+  }
 
-  .hint{color:var(--muted); font-size:12.5px; margin:9px 0 0}
-  .hint code,.tab code{font-family:var(--mono); font-size:.92em; color:var(--text); background:var(--surface-2); padding:1px 5px; border-radius:5px}
-  .empty{color:var(--muted); font-family:var(--mono); font-size:12.5px; padding:16px 4px; text-align:center}
-  pre.out{background:#0c0e12; border:1px solid var(--line); border-radius:8px; padding:11px; font-family:var(--mono); font-size:11.5px; color:#aeb6c2; overflow:auto; max-height:230px; margin:0}
+  .workspace {
+    grid-template-columns: 1fr;
+  }
 
-  /* toast */
-  #toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); opacity:0; pointer-events:none; transition:.18s; background:var(--surface-2); border:1px solid var(--line); border-left:3px solid var(--amber); color:var(--text); padding:11px 15px; border-radius:9px; font-size:13.5px; max-width:90vw; box-shadow:0 8px 30px rgba(0,0,0,.5); z-index:50}
-  #toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
-  #toast.err{border-left-color:var(--danger)}
-  #toast.ok{border-left-color:var(--green)}
+  .canvas-panel {
+    height: 42vh;
+  }
+
+  .tabs-panel {
+    height: 50vh;
+  }
+
+  .queue-row,
+  .footer-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .footer-actions button {
+    flex: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .canvas-footer #matrixSize { display: none; }
+  .builder-row { flex-wrap: wrap; }
+  .two-col { grid-template-columns: 1fr; }
+  .timeline-step { grid-template-columns: 18px 40px minmax(0, 1fr) auto; }
+}
+
 </style>
-</head>
-<body>
-<div class="wrap">
-  <header class="bar">
-    <div class="logo">
-      <div class="dots" aria-hidden="true">
-        <i class="on"></i><i></i><i class="on"></i>
-        <i></i><i class="on"></i><i></i>
-        <i class="on"></i><i></i><i class="on"></i>
-      </div>
-      <div>
-        <h1>matrix.sign</h1>
-        <small>2.0 control</small>
-      </div>
-    </div>
-    <div class="host">
-      <label for="host">Host</label>
-      <input id="host" placeholder="same origin" autocomplete="off" spellcheck="false" />
-    </div>
-  </header>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="panel topbar">
+        <div class="brand-mark">LED</div>
+        <div class="topbar-title">Matrix Sign</div>
+        <div id="connState" class="conn-state" title="Connection status"><span class="dot"></span>Connecting…</div>
+        <button id="toggleConfigButton" class="icon-button" type="button" aria-label="Open settings" title="Settings">⚙</button>
+      </header>
 
-  <div class="grid">
-    <!-- LEFT: the panel itself -->
-    <div>
-      <section class="card">
-        <p class="eyebrow">Live panel</p>
-        <div class="screen"><canvas id="panel" width="64" height="64"></canvas></div>
-        <div class="meta">
-          <span><span id="livedot" class="dot"></span><span id="conn">connecting…</span></span>
-          <span>size <b id="size">—</b></span>
-          <span>playing <b id="playing">—</b></span>
-          <span>speed <b id="speed">—</b></span>
-        </div>
-      </section>
+      <div class="workspace">
+        <section class="panel canvas-panel">
+          <div id="canvasStage" class="canvas-stage">
+            <div id="canvasFrame" class="canvas-frame">
+              <canvas id="liveCanvas" aria-label="Current LED matrix output"></canvas>
+              <canvas id="frameCanvas" aria-label="LED matrix editor"></canvas>
+            </div>
+          </div>
+          <div class="canvas-footer">
+            <span id="cursorPos" title="Cursor position (x, y)">x –, y –</span>
+            <span id="matrixSize" title="Matrix size">–</span>
+            <span id="playingInfo" class="playing-info">Nothing playing</span>
+          </div>
+        </section>
 
-      <section class="card">
-        <p class="eyebrow">Brightness</p>
-        <div class="bright">
-          <input id="bright" type="range" min="0" max="255" value="128" aria-label="Brightness" />
-          <output id="brightval">128</output>
-        </div>
-        <p class="hint">Applies immediately. Lower it if the panel browns out on USB power.</p>
-      </section>
-    </div>
+        <aside class="panel tabs-panel">
+          <div class="tabs-bar" role="tablist">
+            <button class="tab-btn active" data-tab="draw" role="tab" aria-selected="true" type="button">Draw</button>
+            <button class="tab-btn" data-tab="composition" role="tab" aria-selected="false" type="button">Objects</button>
+            <button class="tab-btn" data-tab="assets" role="tab" aria-selected="false" type="button">Assets</button>
+            <button class="tab-btn" data-tab="anim" role="tab" aria-selected="false" type="button">Animate</button>
+            <button class="tab-btn" data-tab="files" role="tab" aria-selected="false" type="button">Files</button>
+          </div>
 
-    <!-- RIGHT: controls -->
-    <section class="card">
-      <div class="tabs" role="tablist">
-        <button role="tab" aria-selected="true" data-tab="anims">animations</button>
-        <button role="tab" aria-selected="false" data-tab="draw">draw</button>
-        <button role="tab" aria-selected="false" data-tab="upload">upload</button>
-        <button role="tab" aria-selected="false" data-tab="info">info</button>
-      </div>
+          <div class="tabs-body">
+            <!-- ================= DRAW ================= -->
+            <section class="tab-panel active" data-tab-panel="draw">
+              <div class="history-row">
+                <button id="undoButton" type="button" title="Undo (Ctrl+Z)" disabled>↺ Undo</button>
+                <button id="redoButton" type="button" title="Redo (Ctrl+Shift+Z)" disabled>↻ Redo</button>
+              </div>
 
-      <!-- ANIMATIONS -->
-      <div class="tab active" id="tab-anims">
-        <div class="row" style="margin-bottom:12px">
-          <button id="refresh" class="ghost">Refresh list</button>
-          <button id="stopall" class="danger">Stop playback</button>
-        </div>
-        <div id="animlist"><div class="empty">Loading animations…</div></div>
-      </div>
+              <div class="tool-buttons" role="group" aria-label="Drawing tools">
+                <button class="tool" data-tool="select" type="button" title="Select &amp; move (V)" aria-label="Select and move tool">⬚</button>
+                <button class="tool active" data-tool="text" type="button" title="Text (T)" aria-label="Text tool">✎</button>
+                <button class="tool" data-tool="scroll" type="button" title="Scrolling text (S)" aria-label="Scrolling text tool">⇆</button>
+                <button class="tool" data-tool="line" type="button" title="Line (L)" aria-label="Line tool">／</button>
+                <button class="tool" data-tool="rectangle" type="button" title="Rectangle (R)" aria-label="Rectangle tool">▭</button>
+                <button class="tool" data-tool="asset" type="button" title="Asset (A)" aria-label="Asset tool">🖼</button>
+                <button class="tool" data-tool="move" type="button" title="Pan &amp; zoom (M)" aria-label="Pan tool">✥</button>
+              </div>
 
-      <!-- DRAW -->
-      <div class="tab" id="tab-draw">
-        <p class="hint" style="margin-top:0">Push an object to the overlay buffer (sits on top of any running animation). The body is one frame — the same shape as a single entry in an anim's <code>frames[]</code>.</p>
-        <div class="row" style="margin:12px 0">
-          <button data-demo="text" class="ghost">Insert text</button>
-          <button data-demo="rect" class="ghost">Insert rectangle</button>
-          <button data-demo="line" class="ghost">Insert line</button>
-        </div>
-        <label class="field"><span>Frame JSON</span>
-          <textarea id="drawjson">{
-  "text": { "x": 0, "y": 0, "text": "hi", "font": "5x7", "color": "#ffb000" },
-  "duration": 0
+              <div class="tab-field">
+                <span>Color</span>
+                <div class="color-row">
+                  <div id="colorPalette" class="color-palette"></div>
+                  <input id="customColor" type="color" value="#ff0000" title="Custom color" />
+                </div>
+                <div class="segmented" role="group" aria-label="Fill style">
+                  <button id="fillSolidButton" class="active" type="button">Solid</button>
+                  <button id="fillGradientButton" type="button">Gradient</button>
+                </div>
+                <div id="gradientSettings" class="gradient-row" hidden>
+                  <label class="mini-field"><span>To</span><input id="gradientColor" type="color" value="#0000ff" /></label>
+                  <label class="mini-field"><span>Angle</span><input id="gradientAngle" type="number" min="0" max="359" step="15" value="90" /></label>
+                  <button id="swapGradientButton" type="button" title="Swap colors" aria-label="Swap gradient colors">⇄</button>
+                </div>
+                <label class="mini-field wide">
+                  <span>Opacity</span>
+                  <div class="range-inline">
+                    <input id="opacityRange" type="range" min="0" max="255" value="255" />
+                    <strong id="opacityValue">100%</strong>
+                  </div>
+                </label>
+                <div id="colorPreview" class="color-preview" title="Current color"></div>
+              </div>
+
+              <div id="toolSettings">
+                <div id="textSettings" class="tab-field">
+                  <label for="textInput">Text</label>
+                  <input id="textInput" type="text" maxlength="64" value="HELLO" />
+                  <label for="textFont">Font</label>
+                  <select id="textFont" class="font-select"></select>
+                </div>
+
+                <div id="scrollSettings" class="tab-field" hidden>
+                  <label for="scrollTextInput">Scrolling text</label>
+                  <input id="scrollTextInput" type="text" value="Hello world" />
+                  <div class="two-col">
+                    <label class="mini-field"><span>Font</span><select id="scrollFont" class="font-select"></select></label>
+                    <label class="mini-field"><span>Direction</span>
+                      <select id="scrollDirection">
+                        <option value="horizontal">Horizontal</option>
+                        <option value="vertical">Vertical</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label class="mini-field"><span>Speed (pixels per second)</span><input id="scrollSpeed" type="number" min="0" max="200" step="1" value="12" /></label>
+                  <p class="hint-text">Drag a box on the canvas — the text scrolls inside it. A single click uses the rest of the row.</p>
+                </div>
+
+                <div id="lineSettings" class="tab-field" hidden>
+                  <label for="lineThickness">Line thickness</label>
+                  <input id="lineThickness" type="number" min="1" max="8" value="1" />
+                </div>
+
+                <div id="rectSettings" class="tab-field" hidden>
+                  <label for="rectBorder">Border width <span class="field-hint">(0 = filled)</span></label>
+                  <input id="rectBorder" type="number" min="0" max="8" value="1" />
+                </div>
+
+                <div id="assetSettings" class="tab-field" hidden>
+                  <label for="assetSelect">Asset</label>
+                  <div class="asset-settings-row">
+                    <select id="assetSelect"></select>
+                    <button id="openAssetEditorButton" type="button" title="Draw a new asset" aria-label="New asset">＋</button>
+                  </div>
+                  <label class="check-field"><input id="assetTint" type="checkbox" /> Recolor with the current color <span class="field-hint">(for single-color assets)</span></label>
+                </div>
+
+                <div id="selectSettings" class="tab-field" hidden>
+                  <div id="selectionInfo" class="selection-info">Nothing selected.</div>
+                  <div class="two-col">
+                    <label class="mini-field"><span>X</span><input id="selX" type="number" disabled /></label>
+                    <label class="mini-field"><span>Y</span><input id="selY" type="number" disabled /></label>
+                  </div>
+                  <div class="footer-actions">
+                    <button id="selEditButton" type="button" disabled>Edit…</button>
+                    <button id="selDuplicateButton" type="button" disabled>Duplicate</button>
+                    <button id="selRemoveButton" class="danger" type="button" disabled>Remove</button>
+                  </div>
+                  <p class="hint-text">Drag an object to move it. Arrow keys nudge it, Shift+arrow moves by 5, Delete removes it, Escape deselects. Tab and Shift+Tab step through the objects.</p>
+                  <p class="hint-text" id="selectUntracked" hidden></p>
+                </div>
+
+                <div id="moveSettings" class="tab-field" hidden>
+                  <label for="zoomRange">Zoom</label>
+                  <div class="range-inline">
+                    <input id="zoomRange" type="range" min="4" max="48" step="2" value="16" />
+                    <strong id="zoomValue">16px</strong>
+                  </div>
+                  <button id="fitZoomButton" type="button">Fit to window</button>
+                </div>
+              </div>
+              <p class="hint-text">Text can contain <code>{name}</code> placeholders — animations fill them in when started with parameters.</p>
+
+              <div class="tab-divider"></div>
+
+              <label class="tab-field">
+                <span>Save the overlay as an animation</span>
+                <input id="animNameInput" type="text" value="demo_anim" placeholder="Animation name" autocomplete="off" spellcheck="false" />
+              </label>
+
+              <div class="footer-actions">
+                <button id="saveFrameButton" class="primary" type="button">Save overlay</button>
+                <button id="clearAllButton" class="danger" type="button">Clear overlay</button>
+              </div>
+
+              <details class="raw-json">
+                <summary>Send a frame as JSON</summary>
+                <p class="hint-text">One frame object, the same shape as an entry in <code>frames[]</code>. Objects without an <code>objname</code> get one so they can be edited and undone.</p>
+                <textarea id="rawFrameInput" spellcheck="false" rows="7">{
+  "text": { "x": 0, "y": 0, "text": "hi", "font": "5x7", "color": "#ffb000" }
 }</textarea>
+                <div class="footer-actions">
+                  <button id="sendRawFrameButton" class="primary" type="button">Send frame</button>
+                </div>
+              </details>
+            </section>
+
+            <!-- ================= OBJECTS ================= -->
+            <section class="tab-panel" data-tab-panel="composition">
+              <div class="panel-header compact-header">
+                <h3>Overlay</h3>
+                <span id="compositionCount" class="count-pill">0</span>
+              </div>
+              <p class="hint-text">What you draw lives here, on top of any animation. Tap an object to edit or remove it.</p>
+              <ul id="compositionTree" class="tree-list">
+                <li class="empty">Nothing on the overlay yet — draw something on the canvas.</li>
+              </ul>
+
+              <div class="panel-header compact-header">
+                <h3>Playing animation</h3>
+                <span id="primaryCount" class="count-pill muted">0</span>
+              </div>
+              <p class="hint-text">Objects placed by the running animation. They change on every frame, so they can't be edited here.</p>
+              <ul id="primaryTree" class="tree-list">
+                <li class="empty">No animation is playing.</li>
+              </ul>
+            </section>
+
+            <!-- ================= ASSETS ================= -->
+            <section class="tab-panel" data-tab-panel="assets">
+              <div class="panel-header compact-header">
+                <h3>Assets</h3>
+                <div class="header-actions">
+                  <button id="newAssetButton" type="button">Draw new</button>
+                  <label class="upload-button" for="assetUpload">Upload image</label>
+                  <input id="assetUpload" type="file" accept="image/*,.bmp" multiple hidden />
+                </div>
+              </div>
+              <label class="tab-field">
+                <span>Uploads go to animation</span>
+                <input id="assetTargetAnim" type="text" list="animIdList" value="demo_anim" autocomplete="off" spellcheck="false" />
+              </label>
+              <label class="check-field"><input id="assetFitMatrix" type="checkbox" checked /> Shrink images larger than the matrix</label>
+              <p class="hint-text">Images are converted to the 32-bit BMP format the sign reads. Each asset belongs to one animation but can be drawn anywhere.</p>
+              <div id="assetList" class="asset-groups"></div>
+            </section>
+
+            <!-- ================= ANIMATE ================= -->
+            <section class="tab-panel" data-tab-panel="anim">
+              <div class="panel-header compact-header">
+                <h3>Play</h3>
+                <div id="statusBadge" class="status-badge">Idle</div>
+              </div>
+              <select id="animationSelector" aria-label="Animation to play"></select>
+              <div class="two-col">
+                <label class="mini-field"><span>Repeat <span class="field-hint">(0 = forever)</span></span><input id="cyclesInput" type="number" min="0" value="0" /></label>
+                <div class="mini-field"><span>&nbsp;</span>
+                  <div class="footer-actions nowrap-actions">
+                    <button id="startAnimationButton" class="primary" type="button">Play</button>
+                    <button id="stopAnimationButton" class="danger" type="button">Stop</button>
+                  </div>
+                </div>
+              </div>
+              <div id="paramsBlock" class="tab-field" hidden>
+                <span>Parameters</span>
+                <div id="paramsList" class="params-list"></div>
+              </div>
+              <div class="tab-field">
+                <span>Playback speed</span>
+                <div class="range-inline">
+                  <input id="speedRange" type="range" min="0.1" max="4" step="0.1" value="1" />
+                  <strong id="speedValue">1.0×</strong>
+                </div>
+              </div>
+
+              <div class="tab-divider"></div>
+
+              <div class="panel-header compact-header">
+                <h3>Build an animation</h3>
+                <span id="timelineCount" class="count-pill">0</span>
+              </div>
+              <p class="hint-text">Draw a frame on the overlay, capture it, change the drawing, capture again. You can also play other animations as steps.</p>
+              <ol id="timelineList" class="timeline-list"></ol>
+
+              <div class="builder-row">
+                <label class="mini-field"><span>Frame length (ms)</span><input id="captureDuration" type="number" min="0" step="100" value="1000" /></label>
+                <button id="captureFrameButton" type="button">Capture overlay</button>
+              </div>
+              <div class="builder-row">
+                <label class="mini-field grow"><span>Animation step</span><select id="stepAnimSelect"></select></label>
+                <label class="mini-field narrow"><span>Repeat</span><input id="stepCycles" type="number" min="1" value="1" /></label>
+                <label class="mini-field narrow"><span>Speed</span><input id="stepSpeed" type="number" min="0.1" step="0.1" value="1" /></label>
+                <button id="addAnimStepButton" type="button">Add</button>
+              </div>
+              <label class="check-field"><input id="blankEachFrame" type="checkbox" checked /> Start each captured frame from a blank screen</label>
+              <label class="tab-field">
+                <span>Animation name</span>
+                <input id="timelineName" type="text" value="my_animation" autocomplete="off" spellcheck="false" />
+              </label>
+              <div class="footer-actions">
+                <button id="uploadTimelineButton" class="primary" type="button">Save animation</button>
+                <button id="editTimelineJsonButton" type="button">Edit as JSON</button>
+                <button id="clearTimelineButton" class="danger" type="button">Clear steps</button>
+              </div>
+            </section>
+
+            <!-- ================= FILES ================= -->
+            <section class="tab-panel" data-tab-panel="files">
+              <div class="panel-header compact-header">
+                <h3>Files</h3>
+                <div class="header-actions">
+                  <button id="newAnimJsonButton" type="button">New animation</button>
+                  <button id="refreshFilesButton" class="icon-button small" type="button" aria-label="Refresh files" title="Refresh">↻</button>
+                </div>
+              </div>
+              <div id="fsStatus" class="fs-status"></div>
+              <div id="fileList" class="file-list"></div>
+            </section>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <datalist id="animIdList"></datalist>
+
+    <!-- ================= SETTINGS ================= -->
+    <div id="settingsModal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="settingsTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="settingsTitle">Settings</h3>
+          <button class="icon-button" data-close-modal type="button" aria-label="Close settings">✕</button>
+        </div>
+        <div class="config-grid">
+          <label class="field">
+            <span>Sign address</span>
+            <input id="apiBase" type="text" placeholder="This page's address" autocomplete="off" spellcheck="false" />
+            <small class="field-hint">Leave empty when this page is served by the sign. Opened from a file, use e.g. <code>http://4.3.2.1</code>.</small>
+          </label>
+          <button id="connectButton" class="primary" type="button">↻ Connect</button>
+
+          <label class="field">
+            <span>Brightness</span>
+            <div class="range-inline">
+              <input id="brightnessRange" type="range" min="0" max="255" value="128" />
+              <strong id="brightnessValue">128</strong>
+            </div>
+          </label>
+
+          <div class="field">
+            <span>Device</span>
+            <dl id="deviceInfo" class="device-info"><dt>Status</dt><dd>Not connected</dd></dl>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= OBJECT EDITOR ================= -->
+    <div id="objectEditModal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="objectEditTitle">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="objectEditTitle">Edit object</h3>
+          <button class="icon-button" data-close-modal type="button" aria-label="Close">✕</button>
+        </div>
+        <p class="hint-text" id="objectEditHint"></p>
+        <div id="objectEditFields" class="object-edit-fields"></div>
+        <div class="footer-actions">
+          <button id="removeObjectButton" class="danger" type="button">Remove</button>
+          <button id="applyObjectButton" class="primary" type="button">Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= ASSET EDITOR ================= -->
+    <div id="assetEditorModal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="assetEditorTitle">
+      <div class="modal-card wide">
+        <div class="modal-header">
+          <h3 id="assetEditorTitle">Asset editor</h3>
+          <button class="icon-button" data-close-modal type="button" aria-label="Close">✕</button>
+        </div>
+        <div class="asset-editor-body">
+          <div class="asset-editor-tools">
+            <div class="segmented" role="group" aria-label="Brush">
+              <button id="aePen" class="active" type="button">Paint</button>
+              <button id="aeErase" type="button">Erase</button>
+            </div>
+            <label class="mini-field narrow"><span>Width</span><input id="aeWidth" type="number" min="1" max="128" value="16" /></label>
+            <label class="mini-field narrow"><span>Height</span><input id="aeHeight" type="number" min="1" max="128" value="16" /></label>
+            <button id="aeClear" type="button">Clear</button>
+          </div>
+          <p class="hint-text">Paints with the color and opacity from the Draw tab. Erased pixels are transparent on the sign.</p>
+          <div class="asset-editor-stage"><canvas id="assetEditorCanvas" width="128" height="128"></canvas></div>
+          <div class="two-col">
+            <label class="mini-field"><span>Animation</span><input id="aeAnim" type="text" list="animIdList" autocomplete="off" spellcheck="false" /></label>
+            <label class="mini-field"><span>File name</span><input id="assetNameInput" type="text" value="custom_asset" autocomplete="off" spellcheck="false" /></label>
+          </div>
+          <div class="footer-actions">
+            <button id="saveAssetButton" class="primary" type="button">Save asset</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= ANIMATION JSON EDITOR ================= -->
+    <div id="jsonEditorModal" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="jsonEditorTitle">
+      <div class="modal-card wide">
+        <div class="modal-header">
+          <h3 id="jsonEditorTitle">Animation JSON</h3>
+          <button class="icon-button" data-close-modal type="button" aria-label="Close">✕</button>
+        </div>
+        <label class="tab-field">
+          <span>Animation name</span>
+          <input id="jsonAnimName" type="text" autocomplete="off" spellcheck="false" placeholder="de.example.myanim" />
         </label>
-        <div class="row">
-          <button id="drawsend" class="primary">Draw to overlay</button>
-          <button id="drawclear" class="danger">Clear overlay</button>
+        <textarea id="jsonEditorText" class="json-editor" spellcheck="false" rows="18"></textarea>
+        <ul id="jsonProblems" class="problems"></ul>
+        <div class="footer-actions">
+          <button id="jsonFormatButton" type="button">Format</button>
+          <button id="jsonCheckButton" type="button">Check</button>
+          <button id="jsonUploadButton" class="primary" type="button">Save to sign</button>
         </div>
       </div>
+    </div>
 
-      <!-- UPLOAD -->
-      <div class="tab" id="tab-upload">
-        <p class="eyebrow" style="margin-top:2px">Upload animation</p>
-        <label class="field"><span>Animation id</span>
-          <input id="ua-name" placeholder="de.uwutastisch.myanim" autocomplete="off" spellcheck="false" /></label>
-        <label class="field"><span>anim.json</span>
-          <textarea id="ua-json">{
-  "default_params": {},
-  "frames": [
-    { "text": { "x": 0, "y": 0, "text": "hello" }, "duration": 1000 }
-  ]
-}</textarea></label>
-        <button id="ua-send" class="primary">Upload animation</button>
+    <div id="toastHost" class="toast-host" role="status" aria-live="polite"></div>
 
-        <hr style="border:none; border-top:1px solid var(--line); margin:20px 0" />
+    <script>
+/* LED Matrix Sign 2.0 — web UI.
+ *
+ * Built into a single self-contained index.html by build.py. Put that file at
+ * /index.html on the sign's SD card or LittleFS image and the firmware serves
+ * it at http://<sign>/ — every API call then goes to the same origin.
+ *
+ * API reference: ledmatrixsign-api-2.0.yaml / README_2.0.md in the firmware.
+ */
+'use strict';
 
-        <p class="eyebrow">Upload asset</p>
-        <p class="hint" style="margin-top:0">Assets must be 32-bit BGRA8888 BMP. Convert with <code>tools/bmp_bgra.py</code> first.</p>
-        <label class="field" style="margin-top:10px"><span>Animation id</span>
-          <input id="uas-name" placeholder="de.uwutastisch.myanim" autocomplete="off" spellcheck="false" /></label>
-        <label class="field"><span>BMP file</span>
-          <input id="uas-file" type="file" accept=".bmp,image/bmp" /></label>
-        <button id="uas-send" class="primary">Upload asset</button>
-      </div>
+// =====================================================================
+// Constants
+// =====================================================================
 
-      <!-- INFO -->
-      <div class="tab" id="tab-info">
-        <div class="row" style="margin-bottom:12px">
-          <button id="info-refresh" class="ghost">Refresh</button>
-        </div>
-        <p class="eyebrow">Filesystem</p>
-        <pre class="out" id="fsout">—</pre>
-        <p class="eyebrow" style="margin-top:16px">GPIO pins</p>
-        <pre class="out" id="gpioout">—</pre>
-        <p class="eyebrow" style="margin-top:16px">Live composition</p>
-        <pre class="out" id="compout">—</pre>
-      </div>
-    </section>
-  </div>
-</div>
+const CELL_PX = 20; // overlay drawing-buffer pixels per LED (independent of zoom)
+const POLL_MS = { frame: 1200, composition: 2000, status: 2500 };
+const DEFAULT_AP_ADDRESS = 'http://4.3.2.1'; // softAP IP from src/config.h
 
-<div id="toast" role="status" aria-live="polite"></div>
+// Fonts the firmware registers in gfx/font.h. 10x14 and 12x16_serif are
+// integer-scaled 5x7 in the current firmware, so the preview matches.
+const FONTS = {
+  '5x7': { scale: 1, spacing: 1 },
+  '10x14': { scale: 2, spacing: 1 },
+  '12x16_serif': { scale: 2, spacing: 2 },
+};
 
-<script>
-(() => {
-  "use strict";
-  // ── host / persistence ────────────────────────────────────────────────
-  const hostInput = document.getElementById("host");
-  const store = (() => { try { return window.localStorage; } catch (e) { return null; } })();
-  hostInput.value = (store && store.getItem("sign.host")) || "";
-  hostInput.addEventListener("change", () => {
-    if (store) try { store.setItem("sign.host", hostInput.value.trim()); } catch (e) {}
-    loadAnims(); refreshInfo();
-  });
-  const base = () => hostInput.value.trim().replace(/\/+$/, "");
-  const url  = p => base() + p;
+// gfx/font5x7.h — ASCII 0x20..0x7E, 5 column bytes per glyph, bit n = row n.
+// Regenerate from the firmware with: python3 build.py --font path/to/font5x7.h
+const FONT_TABLE = (() => {
+  const hex = ''
+  + '000000000000005f00000007000700147f147f14242a7f2a12631328664136494936500004030000001c2241000041221c00'
+  + '2a1c3e1c2a08083e080800403000000808080808000060000040201c02013659414d3600427f400042615149462141454b31'
+  + '1814127f1027454545393c4a49493001710905033649494936064949291e0000360000004036000008142241001414141414'
+  + '004122140802015109063e415d551e7e0909097e7f494949363e414141227f4141221c7f494949417f090909013e4149493a'
+  + '7f0808087f00417f41003040413f017f081422417f404040407f0204027f7f0204087f3e4141413e7f090909063e4151215e'
+  + '7f09192946264949493201017f01013f4040403f1f2040201f7f2018207f631408146303047804036151494543007f414100'
+  + '01061820400041417f000402010204404040404000010204007e0909097e7f494949363e414141227f4141221c7f49494941'
+  + '7f090909013e4149493a7f0808087f00417f41003040413f017f081422417f404040407f0204027f7f0204087f3e4141413e'
+  + '7f090909063e4151215e7f09192946264949493201017f01013f4040403f1f2040201f7f2018207f63140814630304780403'
+  + '61514945430814634100000077000000416314080804080804';
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i += 1) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+})();
 
-  // ── fetch helpers ─────────────────────────────────────────────────────
-  async function api(path, opts) {
-    opts = opts || {};
-    const init = { method: opts.method || "GET" };
-    if (opts.body !== undefined) { init.headers = { "Content-Type": "application/json" }; init.body = JSON.stringify(opts.body); }
-    const res = await fetch(url(path), init);
-    const text = await res.text();
-    let data; try { data = text ? JSON.parse(text) : {}; } catch (e) { data = { raw: text }; }
-    if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
-    return data;
+const PALETTE = ['#ff0000', '#ff8800', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ffffff', '#000000'];
+
+// =====================================================================
+// State
+// =====================================================================
+
+const state = {
+  width: 32,
+  height: 16,
+  zoom: 16,
+  userSetZoom: false,
+  sizeKnown: false,
+
+  activeTool: 'text',
+  color: { mode: 'solid', a: '#ff0000', b: '#0000ff', alpha: 255, angle: 90 },
+
+  anims: [], // [{ id, assets: [] }] from /file/ls
+  selectedAsset: '', // "<animId>/<file>"
+  animMeta: new Map(), // animId -> Promise<{ doc, params:{}, placeholders:[] }>
+  // Animations with assets but no anim.json yet — uploading an asset creates
+  // the folder, so this is the normal state until the animation is saved.
+  noDocAnims: new Set(),
+
+  overlayLayers: [], // /framebuffer/getcomposition .api
+  primaryLayers: [], // /framebuffer/getcomposition .primary
+  objectStore: {}, // objname -> { key, fields } — values of objects drawn here
+  mutationSeq: 0, // bumped on every overlay change; stale polls are dropped
+
+  undoStack: [],
+  redoStack: [],
+  editingLayer: null,
+
+  drag: null,
+  selected: null, // objname of the object picked with the select tool
+  hoverObject: null, // objname under the pointer in select mode
+  preview: null, // { key, fields, box? } ghost drawn on the editor canvas
+  hoverCell: null,
+  highlight: null, // { x, y, w, h } bounds of the object being edited
+
+  timeline: [],
+  status: { running: false, paused: false, speed: 1, animname: '' },
+  conn: { ok: null, failures: 0 },
+  deviceInfo: {},
+};
+
+const canvasFrame = document.getElementById('canvasFrame');
+const canvas = document.getElementById('frameCanvas');
+const liveCanvas = document.getElementById('liveCanvas');
+const ctx = canvas.getContext('2d');
+const liveCtx = liveCanvas.getContext('2d');
+
+// =====================================================================
+// Small helpers
+// =====================================================================
+
+const $ = (id) => document.getElementById(id);
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function num(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+let nameCounter = 0;
+function makeObjname(prefix) {
+  nameCounter = (nameCounter + 1) % 1296;
+  return `${prefix}_${Date.now().toString(36)}${nameCounter.toString(36)}`;
+}
+
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+function debounce(fn, ms) {
+  let timer = null;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+function splitAssetRef(ref) {
+  const i = String(ref).indexOf('/');
+  return i > 0 ? { anim: ref.slice(0, i), file: ref.slice(i + 1) } : { anim: '', file: ref };
+}
+
+// Strip "/anim/" from the id the firmware reports in /anim/status.
+function animIdFromStatus(name) {
+  return String(name || '').replace(/^\/?anim\//, '');
+}
+
+// =====================================================================
+// Toasts + connection indicator
+// =====================================================================
+
+function toast(message, kind = 'ok', ms = 3600) {
+  const host = $('toastHost');
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.textContent = message;
+  host.appendChild(el);
+  while (host.children.length > 3) host.firstChild.remove();
+  setTimeout(() => el.remove(), kind === 'error' ? ms + 2000 : ms);
+}
+
+function fail(error) {
+  const message = error && error.message ? error.message : String(error);
+  toast(message, 'error');
+  if (error && error.network) noteConnection(false);
+}
+
+function setConnState(ok) {
+  const el = $('connState');
+  if (ok === null) {
+    el.className = 'conn-state';
+    el.innerHTML = '<span class="dot"></span>Connecting…';
+    return;
+  }
+  el.className = `conn-state ${ok ? 'ok' : 'error'}`;
+  el.innerHTML = `<span class="dot"></span>${ok ? 'Connected' : 'Offline'}`;
+}
+
+// Polls fail now and then on a busy ESP32 — only show "Offline" after two
+// misses in a row so the indicator doesn't flicker.
+function noteConnection(ok) {
+  if (ok) {
+    state.conn.failures = 0;
+    if (state.conn.ok !== true) {
+      state.conn.ok = true;
+      setConnState(true);
+    }
+    return;
+  }
+  state.conn.failures += 1;
+  if (state.conn.failures >= 2 && state.conn.ok !== false) {
+    state.conn.ok = false;
+    setConnState(false);
+  }
+}
+
+// =====================================================================
+// API
+// =====================================================================
+
+function defaultApiBase() {
+  const fromQuery = new URLSearchParams(location.search).get('api');
+  if (fromQuery) return fromQuery;
+  if (location.protocol === 'file:') return DEFAULT_AP_ADDRESS;
+  return '';
+}
+
+const api = { base: defaultApiBase() };
+
+function apiUrl(path) {
+  return `${api.base.trim().replace(/\/+$/, '')}${path}`;
+}
+
+function isCrossOrigin() {
+  if (!api.base.trim()) return false;
+  try {
+    return new URL(api.base, location.href).origin !== location.origin;
+  } catch (e) {
+    return true;
+  }
+}
+
+function describeTarget() {
+  return api.base.trim() || location.origin;
+}
+
+// All endpoints speak JSON. For cross-origin use (page opened from disk) the
+// body goes out as text/plain: that keeps it a "simple" request with no CORS
+// preflight, and the firmware parses the body as JSON regardless.
+async function request(path, { method = 'GET', body, as = 'json', timeout = 9000 } = {}) {
+  const init = { method, headers: {} };
+  if (body !== undefined) {
+    init.body = typeof body === 'string' ? body : JSON.stringify(body);
+    init.headers['Content-Type'] = isCrossOrigin() ? 'text/plain;charset=UTF-8' : 'application/json';
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  init.signal = controller.signal;
+
+  let response;
+  try {
+    response = await fetch(apiUrl(path), init);
+  } catch (e) {
+    const error = new Error(e.name === 'AbortError'
+      ? `The sign didn't answer within ${Math.round(timeout / 1000)} s.`
+      : `Can't reach the sign at ${describeTarget()}. Check the Wi-Fi connection or the address in Settings.`);
+    error.network = true;
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 
-  let toastTimer;
-  function toast(msg, kind) {
-    const t = document.getElementById("toast");
-    t.textContent = msg; t.className = "show " + (kind || "");
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.className = ""; }, 3200);
+  if (as === 'buffer') {
+    if (!response.ok) throw new Error(`Download failed (HTTP ${response.status})`);
+    return response.arrayBuffer();
   }
 
-  // ── tabs ──────────────────────────────────────────────────────────────
-  document.querySelectorAll(".tabs button").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", String(b === btn)));
-      document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
-      if (btn.dataset.tab === "info") refreshInfo();
-    });
-  });
+  const text = await response.text();
+  let data = text;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (e) {
+    if (as === 'json' && response.ok) {
+      const error = new Error(`Unexpected reply from ${path} — is the address in Settings pointing at the sign?`);
+      error.network = true;
+      throw error;
+    }
+  }
+  if (!response.ok) {
+    const reason = data && typeof data === 'object' && data.error ? data.error : response.statusText || 'request failed';
+    throw new Error(`${reason} (HTTP ${response.status} from ${path})`);
+  }
+  return data;
+}
 
-  // ── live preview (the signature element) ──────────────────────────────
-  const canvas = document.getElementById("panel");
-  const ctx = canvas.getContext("2d");
-  let GW = 0, GH = 0;
+const apiGet = (path, options) => request(path, options);
+const apiPost = (path, body, options) => request(path, { ...options, method: 'POST', body });
+const downloadUrl = (path) => apiUrl(`/file/download?path=${encodeURIComponent(path)}`);
 
-  function drawDots(w, h, bytes) {
-    if (w !== GW || h !== GH) { canvas.width = w; canvas.height = h; GW = w; GH = h; }
-    const r = 0.42;
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#0a0b0d"; ctx.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y++) {
-      for (let x = 0; x < w; x++) {
-        const i = (y * w + x) * 4;
-        const b = bytes[i], g = bytes[i + 1], rr = bytes[i + 2], a = bytes[i + 3];
-        const lit = a !== 0 && (rr || g || b);
-        ctx.beginPath();
-        ctx.arc(x + 0.5, y + 0.5, r, 0, Math.PI * 2);
-        ctx.fillStyle = lit ? ("rgb(" + rr + "," + g + "," + b + ")") : "#14161b";
-        ctx.fill();
+// =====================================================================
+// Colors — mirrors gfx/color.h so previews match the panel
+// =====================================================================
+
+function parseHex(input) {
+  const s = String(input || '').trim();
+  if (s.length < 4 || s[0] !== '#') return null;
+  const h = s.slice(1);
+  if (!/^[0-9a-fA-F]+$/.test(h)) return null;
+  if (h.length === 3 || h.length === 4) {
+    const n = [...h].map((c) => parseInt(c, 16) * 17);
+    return { r: n[0], g: n[1], b: n[2], a: h.length === 4 ? n[3] : 255 };
+  }
+  if (h.length === 6 || h.length === 8) {
+    const n = [0, 2, 4, 6].map((i) => (i < h.length ? parseInt(h.substr(i, 2), 16) : 255));
+    return { r: n[0], g: n[1], b: n[2], a: n[3] };
+  }
+  return null;
+}
+
+const WHITE = { r: 255, g: 255, b: 255, a: 255 };
+
+function parseColorSpec(raw) {
+  const s = String(raw ?? '').trim();
+  if (/^linear-gradient/i.test(s)) {
+    const lp = s.indexOf('(');
+    const rp = s.lastIndexOf(')');
+    if (lp >= 0 && rp > lp) {
+      const spec = { gradient: true, angle: 0, stops: [] };
+      s.slice(lp + 1, rp).split(',').map((t) => t.trim()).forEach((tok) => {
+        if (tok.endsWith('deg')) spec.angle = parseFloat(tok) || 0;
+        else if (tok.startsWith('#')) {
+          const c = parseHex(tok);
+          if (c) spec.stops.push(c);
+        }
+      });
+      if (!spec.stops.length) spec.stops.push(WHITE);
+      if (spec.stops.length === 1) spec.gradient = false;
+      return spec;
+    }
+  }
+  const c = parseHex(s);
+  return { gradient: false, angle: 0, stops: [c || WHITE] };
+}
+
+function isValidColorSpec(raw) {
+  const s = String(raw ?? '').trim();
+  return Boolean(parseHex(s)) || /^linear-gradient\s*\(/i.test(s);
+}
+
+function colorAt(spec, u, v) {
+  if (!spec.gradient || spec.stops.length < 2) return spec.stops[0] || WHITE;
+  const rad = (spec.angle * Math.PI) / 180;
+  const dx = Math.sin(rad);
+  const dy = -Math.cos(rad);
+  const t = clamp((u - 0.5) * dx + (v - 0.5) * dy + 0.5, 0, 1);
+  const scaled = t * (spec.stops.length - 1);
+  const i = Math.floor(scaled);
+  if (i >= spec.stops.length - 1) return spec.stops[spec.stops.length - 1];
+  const f = scaled - i;
+  const a = spec.stops[i];
+  const b = spec.stops[i + 1];
+  const lerp = (x, y) => Math.trunc(x + (y - x) * f);
+  return { r: lerp(a.r, b.r), g: lerp(a.g, b.g), b: lerp(a.b, b.b), a: lerp(a.a, b.a) };
+}
+
+function hexWithAlpha(hex, alpha) {
+  const base = String(hex).slice(0, 7).toLowerCase();
+  return alpha >= 255 ? base : `${base}${clamp(Math.round(alpha), 0, 255).toString(16).padStart(2, '0')}`;
+}
+
+function currentColorSpec() {
+  const { mode, a, b, alpha, angle } = state.color;
+  if (mode === 'gradient') {
+    return `linear-gradient(${Math.round(num(angle, 90))}deg, ${hexWithAlpha(a, alpha)}, ${hexWithAlpha(b, alpha)})`;
+  }
+  return hexWithAlpha(a, alpha);
+}
+
+// Solid color for places that can only take one (asset tint).
+function currentSolidColor() {
+  return hexWithAlpha(state.color.a, state.color.alpha);
+}
+
+// CSS for a swatch. Our gradient angles already follow CSS conventions.
+function cssForSpec(raw) {
+  const spec = parseColorSpec(raw);
+  const css = (c) => `rgba(${c.r}, ${c.g}, ${c.b}, ${(c.a / 255).toFixed(3)})`;
+  if (!spec.gradient) return css(spec.stops[0]);
+  return `linear-gradient(${spec.angle}deg, ${spec.stops.map(css).join(', ')})`;
+}
+
+// =====================================================================
+// Raster — a JS twin of gfx/framebuffer.h for ghost previews + thumbnails
+// =====================================================================
+
+function fontOf(name) {
+  const f = FONTS[name] || FONTS['5x7'];
+  const gw = 5 * f.scale;
+  const gh = 7 * f.scale;
+  return { ...f, gw, gh, advance: gw + f.spacing };
+}
+
+function glyphPixel(font, ch, gx, gy) {
+  if (gx < 0 || gy < 0) return false;
+  const bx = Math.floor(gx / font.scale);
+  const by = Math.floor(gy / font.scale);
+  if (bx >= 5 || by >= 7) return false;
+  let code = ch.charCodeAt(0);
+  if (!(code >= 0x20 && code <= 0x7e)) code = 0x3f; // '?'
+  return ((FONT_TABLE[(code - 0x20) * 5 + bx] >> by) & 1) === 1;
+}
+
+function measureText(font, s) {
+  return s.length ? s.length * font.advance - font.spacing : 0;
+}
+
+class Raster {
+  constructor(w, h) {
+    this.w = w;
+    this.h = h;
+    this.px = new Uint8ClampedArray(w * h * 4);
+  }
+
+  blend(x, y, c) {
+    if (x < 0 || y < 0 || x >= this.w || y >= this.h || c.a === 0) return;
+    const i = (y * this.w + x) * 4;
+    const d = this.px;
+    if (c.a === 255) {
+      d[i] = c.r; d[i + 1] = c.g; d[i + 2] = c.b; d[i + 3] = 255;
+      return;
+    }
+    const sa = c.a;
+    const da = 255 - sa;
+    d[i] = (c.r * sa + d[i] * da) / 255;
+    d[i + 1] = (c.g * sa + d[i + 1] * da) / 255;
+    d[i + 2] = (c.b * sa + d[i + 2] * da) / 255;
+    d[i + 3] = Math.max(c.a, d[i + 3]);
+  }
+
+  line(x0, y0, x1, y1, thickness, spec) {
+    const bx = Math.min(x0, x1);
+    const by = Math.min(y0, y1);
+    const bw = Math.abs(x1 - x0) + 1;
+    const bh = Math.abs(y1 - y0) + 1;
+    const t = Math.max(1, thickness);
+    const dx = Math.abs(x1 - x0);
+    const sx = x0 < x1 ? 1 : -1;
+    const dy = -Math.abs(y1 - y0);
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    let x = x0;
+    let y = y0;
+    for (let guard = 0; guard < 10000; guard += 1) {
+      for (let oy = 0; oy < t; oy += 1) {
+        for (let ox = 0; ox < t; ox += 1) {
+          const px = x + ox;
+          const py = y + oy;
+          const u = bw > 1 ? (px - bx) / (bw - 1) : 0;
+          const v = bh > 1 ? (py - by) / (bh - 1) : 0;
+          this.blend(px, py, colorAt(spec, u, v));
+        }
+      }
+      if (x === x1 && y === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x += sx; }
+      if (e2 <= dx) { err += dx; y += sy; }
+    }
+  }
+
+  rect(x, y, dx, dy, border, spec) {
+    if (dx <= 0 || dy <= 0) return;
+    for (let j = 0; j < dy; j += 1) {
+      for (let i = 0; i < dx; i += 1) {
+        const edge = i < border || j < border || i >= dx - border || j >= dy - border;
+        if (border > 0 && !edge) continue;
+        const u = dx > 1 ? i / (dx - 1) : 0;
+        const v = dy > 1 ? j / (dy - 1) : 0;
+        this.blend(x + i, y + j, colorAt(spec, u, v));
       }
     }
   }
 
-  function b64ToBytes(b64) {
-    const bin = atob(b64), n = bin.length, out = new Uint8Array(n);
-    for (let i = 0; i < n; i++) out[i] = bin.charCodeAt(i);
-    return out;
+  text(fontName, s, x, y, spec, clip) {
+    const font = fontOf(fontName);
+    const total = measureText(font, s);
+    let penX = x;
+    for (const ch of s) {
+      for (let gy = 0; gy < font.gh; gy += 1) {
+        for (let gx = 0; gx < font.gw; gx += 1) {
+          if (!glyphPixel(font, ch, gx, gy)) continue;
+          const ax = penX + gx;
+          const ay = y + gy;
+          if (clip && (ax < clip.x || ax >= clip.x + clip.w || ay < clip.y || ay >= clip.y + clip.h)) continue;
+          const u = total > 1 ? (ax - x) / (total - 1) : 0;
+          const v = font.gh > 1 ? gy / (font.gh - 1) : 0;
+          this.blend(ax, ay, colorAt(spec, u, v));
+        }
+      }
+      penX += font.advance;
+    }
   }
 
-  const livedot = document.getElementById("livedot");
-  const conn = document.getElementById("conn");
-  function setOnline(ok, label) {
-    livedot.classList.toggle("live", ok);
-    conn.textContent = label || (ok ? "live" : "offline");
+  blit(asset, x, y, tint) {
+    for (let j = 0; j < asset.h; j += 1) {
+      for (let i = 0; i < asset.w; i += 1) {
+        const p = (j * asset.w + i) * 4;
+        const r = asset.rgba[p];
+        const g = asset.rgba[p + 1];
+        const b = asset.rgba[p + 2];
+        const a = asset.rgba[p + 3];
+        if (tint) {
+          const lum = (r * 77 + g * 150 + b * 29) >> 8;
+          this.blend(x + i, y + j, { r: tint.r, g: tint.g, b: tint.b, a: Math.trunc((lum * a) / 255) });
+        } else {
+          this.blend(x + i, y + j, { r, g, b, a });
+        }
+      }
+    }
   }
 
-  async function pollFrame() {
-    try {
-      const d = await api("/framebuffer/get");
-      if (d.data) drawDots(d.width, d.height, b64ToBytes(d.data));
-      setOnline(true, "live");
-    } catch (e) { setOnline(false, "no signal"); }
+  missing(x, y) {
+    for (let j = 0; j < 4; j += 1) {
+      for (let i = 0; i < 4; i += 1) {
+        this.blend(x + i, y + j, (i + j) & 1 ? { r: 0, g: 0, b: 0, a: 255 } : { r: 160, g: 0, b: 200, a: 255 });
+      }
+    }
   }
 
-  async function pollStatus() {
-    try {
-      const s = await api("/anim/status");
-      document.getElementById("playing").textContent = s.running ? (s.animname || "—") : "stopped";
-      const sp = Number(s.speed);
-      document.getElementById("speed").textContent = isFinite(sp) ? sp.toFixed(2) + "×" : "—";
-    } catch (e) {}
-    try {
-      const z = await api("/framebuffer/size");
-      document.getElementById("size").textContent = z.width + "×" + z.height;
-    } catch (e) {}
+  toCanvas(target) {
+    const cv = target || document.createElement('canvas');
+    cv.width = this.w;
+    cv.height = this.h;
+    cv.getContext('2d').putImageData(new ImageData(this.px, this.w, this.h), 0, 0);
+    return cv;
+  }
+}
+
+// Rasterise one drawable the way the firmware would. Scrolling text is shown
+// with its first character at the left of its window (phase paused).
+function rasterizeObject(raster, key, f) {
+  const spec = parseColorSpec(f.color);
+  const x = num(f.x, 0);
+  const y = num(f.y, 0);
+  switch (key) {
+    case 'text':
+      raster.text(f.font || '5x7', String(f.text ?? ''), x, y, spec);
+      break;
+    case 'scrolling_text': {
+      const clip = { x, y, w: num(f.dx, 0), h: num(f.dy, 0) };
+      raster.text(f.font || '5x7', String(f.text ?? ''), x, y, spec, clip);
+      break;
+    }
+    case 'line':
+      raster.line(x, y, x + num(f.dx, 0), y + num(f.dy, 0), num(f.thickness, 1), spec);
+      break;
+    case 'rectangle':
+      raster.rect(x, y, num(f.dx, 0), num(f.dy, 0), num(f.border, 0), spec);
+      break;
+    case 'asset': {
+      const cached = assetCache.get(f.name);
+      if (cached && cached.asset && cached.asset.compatible) {
+        const tint = f.color ? (parseColorSpec(f.color).stops[0] || WHITE) : null;
+        raster.blit(cached.asset, x, y, tint);
+      } else if (cached && cached.asset) {
+        raster.missing(x, y);
+      } else {
+        ensureAsset(f.name).then(() => renderOverlay()).catch(() => {});
+      }
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+// Bounding box of a drawable, for highlighting it on the canvas.
+function objectBounds(key, f) {
+  const x = num(f.x, 0);
+  const y = num(f.y, 0);
+  switch (key) {
+    case 'text': {
+      const font = fontOf(f.font);
+      return { x, y, w: Math.max(1, measureText(font, String(f.text ?? ''))), h: font.gh };
+    }
+    case 'scrolling_text':
+    case 'rectangle':
+      return { x, y, w: Math.max(1, num(f.dx, 0)), h: Math.max(1, num(f.dy, 0)) };
+    case 'line': {
+      const t = Math.max(1, num(f.thickness, 1));
+      const x1 = x + num(f.dx, 0);
+      const y1 = y + num(f.dy, 0);
+      return { x: Math.min(x, x1), y: Math.min(y, y1), w: Math.abs(x1 - x) + t, h: Math.abs(y1 - y) + t };
+    }
+    case 'asset': {
+      const cached = assetCache.get(f.name);
+      const a = cached && cached.asset;
+      return { x, y, w: a ? a.w : 4, h: a ? a.h : 4 };
+    }
+    default:
+      return null;
+  }
+}
+
+// =====================================================================
+// BMP — decode anything the sign may hold, encode what it can read
+// =====================================================================
+
+// Returns { w, h, rgba (top-down RGBA), bpp, compatible }. `compatible` is
+// what gfx/asset.h accepts: 32 bpp, BI_RGB or BI_BITFIELDS.
+function decodeBmp(buffer) {
+  const view = new DataView(buffer);
+  if (buffer.byteLength < 54 || view.getUint16(0, true) !== 0x4d42) throw new Error('Not a BMP file');
+  const dataOffset = view.getUint32(10, true);
+  const dibSize = view.getUint32(14, true);
+  if (dibSize < 40) throw new Error('Unsupported BMP header');
+  const w = view.getInt32(18, true);
+  const rawH = view.getInt32(22, true);
+  const bpp = view.getUint16(28, true);
+  const compression = view.getUint32(30, true);
+  if (![24, 32].includes(bpp) || ![0, 3].includes(compression)) {
+    throw new Error(`Unsupported BMP (${bpp} bpp, compression ${compression})`);
+  }
+  const h = Math.abs(rawH);
+  const bottomUp = rawH > 0;
+  const bytesPP = bpp / 8;
+  const rowSize = Math.floor((bpp * w + 31) / 32) * 4;
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  const src = new Uint8Array(buffer);
+  for (let sy = 0; sy < h; sy += 1) {
+    const dy = bottomUp ? h - 1 - sy : sy;
+    const row = dataOffset + sy * rowSize;
+    for (let x = 0; x < w; x += 1) {
+      const p = row + x * bytesPP;
+      const o = (dy * w + x) * 4;
+      rgba[o] = src[p + 2];
+      rgba[o + 1] = src[p + 1];
+      rgba[o + 2] = src[p];
+      rgba[o + 3] = bytesPP === 4 ? src[p + 3] : 255;
+    }
+  }
+  return { w, h, rgba, bpp, compatible: bpp === 32 };
+}
+
+// 32-bit BGRA8888, BITMAPINFOHEADER, BI_RGB, bottom-up — the exact layout
+// tools/bmp_bgra.py writes and gfx/asset.h reads.
+function encodeBmp32(w, h, rgba) {
+  const pixelBytes = w * h * 4;
+  const buffer = new ArrayBuffer(54 + pixelBytes);
+  const view = new DataView(buffer);
+  view.setUint16(0, 0x4d42, true);
+  view.setUint32(2, 54 + pixelBytes, true);
+  view.setUint32(10, 54, true);
+  view.setUint32(14, 40, true);
+  view.setInt32(18, w, true);
+  view.setInt32(22, h, true);
+  view.setUint16(26, 1, true);
+  view.setUint16(28, 32, true);
+  view.setUint32(30, 0, true);
+  view.setUint32(34, pixelBytes, true);
+  view.setInt32(38, 2835, true);
+  view.setInt32(42, 2835, true);
+  const out = new Uint8Array(buffer);
+  let o = 54;
+  for (let y = h - 1; y >= 0; y -= 1) {
+    for (let x = 0; x < w; x += 1) {
+      const i = (y * w + x) * 4;
+      out[o] = rgba[i + 2];
+      out[o + 1] = rgba[i + 1];
+      out[o + 2] = rgba[i];
+      out[o + 3] = rgba[i + 3];
+      o += 4;
+    }
+  }
+  return out;
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function sanitizeFileName(name, fallback = 'asset') {
+  const base = String(name || '').trim().replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._]+/, '');
+  return `${base || fallback}.bmp`;
+}
+
+function sanitizeAnimName(name) {
+  return String(name || '').trim().replace(/[\s/\\]+/g, '_').replace(/[^A-Za-z0-9._-]/g, '');
+}
+
+// Asset cache: "<anim>/<file>" -> { promise, asset }
+const assetCache = new Map();
+
+function ensureAsset(ref) {
+  if (!ref) return Promise.reject(new Error('No asset'));
+  let entry = assetCache.get(ref);
+  if (entry) return entry.promise;
+  const { anim, file } = splitAssetRef(ref);
+  entry = { asset: null, error: null, promise: null };
+  entry.promise = request(`/file/download?path=${encodeURIComponent(`/anim/${anim}/assets/${file}`)}`, { as: 'buffer' })
+    .then((buffer) => {
+      entry.asset = decodeBmp(buffer);
+      return entry.asset;
+    })
+    .catch((error) => {
+      entry.error = error;
+      throw error;
+    });
+  assetCache.set(ref, entry);
+  return entry.promise;
+}
+
+function uploadAssetBytes(animName, fileName, bytes) {
+  return apiPost('/file/uploadasset', { animname: animName, filename: fileName, data: bytesToBase64(bytes) })
+    .then(() => {
+      assetCache.delete(`${animName}/${fileName}`);
+    });
+}
+
+// =====================================================================
+// Canvas geometry
+// =====================================================================
+
+// The live canvas holds one pixel per LED and is scaled up by CSS; the editor
+// canvas on top has CELL_PX pixels per LED for the grid and previews.
+function applyFrameGeometry() {
+  canvasFrame.style.aspectRatio = `${state.width} / ${state.height}`;
+  canvasFrame.style.width = `${state.width * state.zoom}px`;
+  const bw = state.width * CELL_PX;
+  const bh = state.height * CELL_PX;
+  if (canvas.width !== bw) canvas.width = bw;
+  if (canvas.height !== bh) canvas.height = bh;
+  if (liveCanvas.width !== state.width) liveCanvas.width = state.width;
+  if (liveCanvas.height !== state.height) liveCanvas.height = state.height;
+  $('matrixSize').textContent = `${state.width} × ${state.height}`;
+}
+
+function computeFitZoom() {
+  const stage = $('canvasStage');
+  const availW = stage.clientWidth - 22;
+  const availH = stage.clientHeight - 22;
+  if (availW <= 0 || availH <= 0) return state.zoom;
+  const fit = Math.floor(Math.min(availW / state.width, availH / state.height));
+  return clamp(fit || 16, 4, 48);
+}
+
+function setZoom(value, fromUser) {
+  state.zoom = clamp(Math.round(value), 4, 48);
+  if (fromUser) state.userSetZoom = true;
+  $('zoomRange').value = String(state.zoom);
+  $('zoomValue').textContent = `${state.zoom}px`;
+  applyFrameGeometry();
+}
+
+function autoFitZoom() {
+  if (state.userSetZoom) return;
+  setZoom(computeFitZoom(), false);
+}
+
+function setMatrixSize(width, height) {
+  const w = num(width, 0);
+  const h = num(height, 0);
+  if (w <= 0 || h <= 0) return;
+  const changed = w !== state.width || h !== state.height;
+  state.width = w;
+  state.height = h;
+  state.sizeKnown = true;
+  if (changed) {
+    applyFrameGeometry();
+    autoFitZoom();
+    renderOverlay();
+    syncAssetEditorLimits();
+  }
+}
+
+// =====================================================================
+// Editor overlay: grid, ghost preview, highlight
+// =====================================================================
+
+const ghostCanvas = document.createElement('canvas');
+
+function renderOverlay() {
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Ghost of what the current tool would draw.
+  const ghost = currentGhost();
+  if (ghost) {
+    const raster = new Raster(state.width, state.height);
+    rasterizeObject(raster, ghost.key, ghost.fields);
+    raster.toCanvas(ghostCanvas);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = state.drag ? 0.9 : 0.6;
+    ctx.drawImage(ghostCanvas, 0, 0, w, h);
+    ctx.restore();
   }
 
-  // ── brightness ────────────────────────────────────────────────────────
-  const bright = document.getElementById("bright");
-  const brightval = document.getElementById("brightval");
-  let brightTimer;
-  bright.addEventListener("input", () => {
-    brightval.textContent = bright.value;
-    clearTimeout(brightTimer);
-    brightTimer = setTimeout(async () => {
-      try { await api("/display/brightness", { method: "POST", body: { brightness: Number(bright.value) } }); }
-      catch (e) { toast("Couldn't set brightness: " + e.message, "err"); }
-    }, 120);
+  // Grid, faint enough to leave the live image readable.
+  ctx.strokeStyle = 'rgba(150, 184, 223, 0.14)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 0; x <= state.width; x += 1) {
+    const px = x * CELL_PX + 0.5;
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, h);
+  }
+  for (let y = 0; y <= state.height; y += 1) {
+    const py = y * CELL_PX + 0.5;
+    ctx.moveTo(0, py);
+    ctx.lineTo(w, py);
+  }
+  ctx.stroke();
+
+  if (state.activeTool === 'select') renderHitboxes();
+
+  const boxes = [];
+  if (ghost && ghost.box) boxes.push({ ...ghost.box, color: 'rgba(119, 241, 208, 0.9)' });
+  if (state.highlight) boxes.push({ ...state.highlight, color: 'rgba(101, 204, 255, 0.95)' });
+  boxes.forEach((b) => {
+    ctx.save();
+    ctx.setLineDash([CELL_PX / 3, CELL_PX / 4]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = b.color;
+    ctx.strokeRect(b.x * CELL_PX + 1, b.y * CELL_PX + 1, b.w * CELL_PX - 2, b.h * CELL_PX - 2);
+    ctx.restore();
   });
-  async function initBrightness() {
-    try { const d = await api("/display/brightness"); bright.value = d.brightness; brightval.textContent = d.brightness; } catch (e) {}
+}
+
+// One box per movable object: faint normally, brighter under the pointer, and
+// solid with corner handles when selected.
+function renderHitboxes() {
+  const dragRef = state.drag && state.drag.mode === 'moveObj' ? state.drag.ref : null;
+  hitboxes().forEach(({ ref, bounds }) => {
+    const selected = ref === state.selected;
+    const hovered = ref === state.hoverObject;
+    const x = bounds.x * CELL_PX;
+    const y = bounds.y * CELL_PX;
+    const w = bounds.w * CELL_PX;
+    const h = bounds.h * CELL_PX;
+    ctx.save();
+    if (selected) {
+      ctx.strokeStyle = 'rgba(119, 241, 208, 0.95)';
+      ctx.lineWidth = 2;
+      if (ref === dragRef) ctx.setLineDash([CELL_PX / 3, CELL_PX / 4]); // where it started
+    } else {
+      ctx.strokeStyle = hovered ? 'rgba(101, 204, 255, 0.95)' : 'rgba(101, 204, 255, 0.55)';
+      ctx.lineWidth = hovered ? 2 : 1.5;
+    }
+    if (hovered && !selected) {
+      ctx.fillStyle = 'rgba(101, 204, 255, 0.1)';
+      ctx.fillRect(x, y, w, h);
+    }
+    ctx.strokeRect(x + 1, y + 1, Math.max(2, w - 2), Math.max(2, h - 2));
+    if (selected && ref !== dragRef) {
+      const s = Math.max(3, CELL_PX / 3);
+      ctx.fillStyle = 'rgba(119, 241, 208, 0.95)';
+      [[x, y], [x + w - s, y], [x, y + h - s], [x + w - s, y + h - s]]
+        .forEach(([hx, hy]) => ctx.fillRect(hx, hy, s, s));
+    }
+    ctx.restore();
+  });
+}
+
+// What would be drawn right now: the drag in progress, or a hover preview for
+// click-to-place tools.
+function currentGhost() {
+  if (state.preview) return state.preview;
+  const cell = state.hoverCell;
+  if (!cell || state.drag) return null;
+  if (state.activeTool === 'text') {
+    return { key: 'text', fields: textFields(cell) };
+  }
+  if (state.activeTool === 'asset' && state.selectedAsset) {
+    return { key: 'asset', fields: assetFields(cell) };
+  }
+  return null;
+}
+
+function getCellFromPointer(event) {
+  const rect = canvas.getBoundingClientRect();
+  const px = ((event.clientX - rect.left) / rect.width) * state.width;
+  const py = ((event.clientY - rect.top) / rect.height) * state.height;
+  return {
+    x: clamp(Math.floor(px), 0, state.width - 1),
+    y: clamp(Math.floor(py), 0, state.height - 1),
+  };
+}
+
+// Rectangles and scroll windows include both corner cells, so a drag from
+// column 2 to column 5 is 4 wide and a single click is 1×1. (The firmware
+// draws nothing for a 0-wide rectangle.)
+function boxExtent(a, b) {
+  return {
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    dx: Math.abs(b.x - a.x) + 1,
+    dy: Math.abs(b.y - a.y) + 1,
+  };
+}
+
+// ---------- Field builders for each tool ----------
+
+function textFields(cell) {
+  return {
+    x: cell.x,
+    y: cell.y,
+    text: $('textInput').value || 'HELLO',
+    font: $('textFont').value || '5x7',
+    color: currentColorSpec(),
+  };
+}
+
+function scrollFields(extent) {
+  return {
+    x: extent.x,
+    y: extent.y,
+    dx: extent.dx,
+    dy: extent.dy,
+    text: $('scrollTextInput').value || 'Hello',
+    font: $('scrollFont').value || '5x7',
+    color: currentColorSpec(),
+    scroll_speed: num($('scrollSpeed').value, 12),
+    scroll_direction: $('scrollDirection').value === 'vertical' ? 'vertical' : 'horizontal',
+  };
+}
+
+// A single click with the scroll tool makes a window from the click to the
+// right edge (horizontal) or bottom edge (vertical), one line of text tall/wide.
+function scrollClickExtent(cell) {
+  const font = fontOf($('scrollFont').value);
+  if ($('scrollDirection').value === 'vertical') {
+    return { x: cell.x, y: cell.y, dx: Math.min(font.gw, state.width - cell.x), dy: state.height - cell.y };
+  }
+  return { x: cell.x, y: cell.y, dx: state.width - cell.x, dy: Math.min(font.gh, state.height - cell.y) };
+}
+
+function lineFields(a, b) {
+  return {
+    x: a.x,
+    y: a.y,
+    dx: b.x - a.x,
+    dy: b.y - a.y,
+    thickness: clamp(num($('lineThickness').value, 1), 1, 16),
+    color: currentColorSpec(),
+  };
+}
+
+function rectFields(extent) {
+  return { ...extent, border: clamp(num($('rectBorder').value, 1), 0, 64), color: currentColorSpec() };
+}
+
+function assetFields(cell) {
+  const fields = { x: cell.x, y: cell.y, name: state.selectedAsset };
+  if ($('assetTint').checked) fields.color = currentSolidColor();
+  return fields;
+}
+
+// ---------- Hitboxes and selection (the select tool) ----------
+// Only objects drawn in this page can have a hitbox: /framebuffer/getcomposition
+// reports each object's type, id and objname but not its geometry, so anything
+// drawn by another client, by a running animation, or before a reload has no
+// known position to hit-test against.
+
+function hitboxes() {
+  return orderedTrackedObjects().map((o) => {
+    const bounds = objectBounds(o.key, o.fields);
+    return bounds ? { ref: o.fields.objname, key: o.key, fields: o.fields, bounds } : null;
+  }).filter(Boolean);
+}
+
+// Topmost object containing the cell. Later objects are drawn on top, so the
+// list is searched backwards.
+function hitTest(cell) {
+  const boxes = hitboxes();
+  for (let i = boxes.length - 1; i >= 0; i -= 1) {
+    const b = boxes[i].bounds;
+    if (cell.x >= b.x && cell.x < b.x + b.w && cell.y >= b.y && cell.y < b.y + b.h) return boxes[i];
+  }
+  return null;
+}
+
+function selectedObject() {
+  return state.selected ? state.objectStore[state.selected] || null : null;
+}
+
+function setSelection(ref) {
+  state.selected = ref && state.objectStore[ref] ? ref : null;
+  renderSelectionPanel();
+  renderOverlay();
+}
+
+function renderSelectionPanel() {
+  const stored = selectedObject();
+  const info = $('selectionInfo');
+  const fields = ['selX', 'selY'].map($);
+  const buttons = ['selEditButton', 'selDuplicateButton', 'selRemoveButton'].map($);
+
+  if (!stored) {
+    const count = hitboxes().length;
+    info.textContent = count
+      ? `Nothing selected — click one of the ${count} object${count === 1 ? '' : 's'} on the canvas.`
+      : 'Nothing to select yet — draw something first.';
+    fields.forEach((el) => { el.value = ''; el.disabled = true; });
+    buttons.forEach((el) => { el.disabled = true; });
+  } else {
+    const label = OBJECT_TYPE_LABELS[stored.key] || stored.key;
+    const detail = stored.fields.text || stored.fields.name || '';
+    info.innerHTML = `<span class="type-badge">${esc(label)}</span> <strong>${esc(stored.fields.objname)}</strong>${detail ? ` — ${esc(detail)}` : ''}`;
+    $('selX').value = String(num(stored.fields.x, 0));
+    $('selY').value = String(num(stored.fields.y, 0));
+    fields.forEach((el) => { el.disabled = false; });
+    buttons.forEach((el) => { el.disabled = false; });
   }
 
-  // ── animations ────────────────────────────────────────────────────────
-  const animlist = document.getElementById("animlist");
-  function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+  const untracked = untrackedOverlayCount();
+  const note = $('selectUntracked');
+  note.hidden = untracked === 0;
+  if (untracked) {
+    note.textContent = `${untracked} object${untracked === 1 ? '' : 's'} on the overlay ${untracked === 1 ? 'was' : 'were'} drawn outside this page, so ${untracked === 1 ? 'its position is' : 'their positions are'} unknown and ${untracked === 1 ? 'it has' : 'they have'} no hitbox. Redraw ${untracked === 1 ? 'it' : 'them'} here to move ${untracked === 1 ? 'it' : 'them'}, or edit ${untracked === 1 ? 'it' : 'them'} in the Objects tab.`;
+  }
+}
 
-  async function loadAnims() {
-    animlist.innerHTML = '<div class="empty">Loading…</div>';
-    let d;
-    try { d = await api("/file/ls"); }
-    catch (e) {
-      animlist.innerHTML = '<div class="empty">Can\'t reach the sign at <b>' + esc(base() || "this page's origin") + '</b>.<br>Make sure you\'re on its Wi-Fi, or set the Host field above.</div>';
+// Keep an object at least partly on the matrix.
+function clampPosition(bounds, x, y) {
+  return {
+    x: clamp(x, 1 - bounds.w, state.width - 1),
+    y: clamp(y, 1 - bounds.h, state.height - 1),
+  };
+}
+
+// Moving redraws the object under the same name (the API has no partial
+// update). Consecutive nudges of one object collapse into a single undo step.
+function moveSelectedTo(nx, ny, coalesce) {
+  const stored = selectedObject();
+  if (!stored) return Promise.resolve();
+  const ref = stored.fields.objname;
+  const bounds = objectBounds(stored.key, stored.fields) || { w: 1, h: 1 };
+  const pos = clampPosition(bounds, Math.round(nx), Math.round(ny));
+  if (pos.x === num(stored.fields.x, 0) && pos.y === num(stored.fields.y, 0)) {
+    renderSelectionPanel();
+    return Promise.resolve();
+  }
+  const previous = { key: stored.key, fields: { ...stored.fields } };
+  const fields = { ...stored.fields, x: pos.x, y: pos.y };
+
+  const top = state.undoStack[state.undoStack.length - 1];
+  const merge = coalesce && top && top.moveOf === ref && Date.now() - top.moveAt < 1200;
+  if (merge) state.undoStack.pop();
+  const action = editAction(ref, stored.key, fields, merge ? top.movePrev : previous);
+  action.moveOf = ref;
+  action.moveAt = Date.now();
+  action.movePrev = merge ? top.movePrev : previous;
+
+  return runAction(action).then(() => {
+    setSelection(ref);
+  }).catch((error) => {
+    if (merge) state.undoStack.push(top);
+    fail(error);
+  });
+}
+
+function nudgeSelection(dx, dy) {
+  const stored = selectedObject();
+  if (!stored) return;
+  moveSelectedTo(num(stored.fields.x, 0) + dx, num(stored.fields.y, 0) + dy, true);
+}
+
+function cycleSelection(step) {
+  const boxes = hitboxes();
+  if (!boxes.length) return;
+  const at = boxes.findIndex((b) => b.ref === state.selected);
+  const next = at < 0 ? (step > 0 ? 0 : boxes.length - 1) : (at + step + boxes.length) % boxes.length;
+  setSelection(boxes[next].ref);
+}
+
+function removeSelection() {
+  const stored = selectedObject();
+  if (!stored) return;
+  const previous = { key: stored.key, fields: { ...stored.fields } };
+  runAction(removeAction(stored.fields.objname, previous))
+    .then(() => {
+      toast(`Removed ${previous.fields.objname}`);
+      setSelection(null);
+    })
+    .catch(fail);
+}
+
+function duplicateSelection() {
+  const stored = selectedObject();
+  if (!stored) return;
+  const bounds = objectBounds(stored.key, stored.fields) || { w: 1, h: 1 };
+  const pos = clampPosition(bounds, num(stored.fields.x, 0) + 1, num(stored.fields.y, 0) + 1);
+  const objname = makeObjname(stored.key === 'rectangle' ? 'rect' : stored.key);
+  const fields = { ...stored.fields, ...pos, objname };
+  runAction(drawAction(stored.key, fields))
+    .then(() => {
+      setSelection(objname);
+      toast(`Duplicated as ${objname}`);
+    })
+    .catch(fail);
+}
+
+// ---------- Pointer handling ----------
+
+function onPointerDown(event) {
+  if (event.button !== undefined && event.button !== 0) return;
+  canvas.setPointerCapture?.(event.pointerId);
+
+  if (state.activeTool === 'move') {
+    state.drag = { mode: 'pan', x: event.clientX, y: event.clientY };
+    canvas.classList.add('panning');
+    return;
+  }
+
+  const cell = getCellFromPointer(event);
+
+  if (state.activeTool === 'select') {
+    const hit = hitTest(cell);
+    setSelection(hit ? hit.ref : null);
+    if (hit) {
+      state.drag = {
+        mode: 'moveObj',
+        ref: hit.ref,
+        start: cell,
+        origin: { x: num(hit.fields.x, 0), y: num(hit.fields.y, 0) },
+        bounds: hit.bounds,
+        moved: false,
+      };
+      canvas.classList.add('dragging-object');
+    }
+    return;
+  }
+
+  if (state.activeTool === 'text') {
+    performDraw('text', { ...textFields(cell), objname: makeObjname('text') });
+    return;
+  }
+
+  if (state.activeTool === 'asset') {
+    if (!state.selectedAsset) {
+      toast('Pick an asset first — or draw one with ＋.', 'error');
       return;
     }
-    const anims = d.anims || [];
-    if (!anims.length) { animlist.innerHTML = '<div class="empty">No animations on the device yet. Upload one from the Upload tab.</div>'; return; }
-    animlist.innerHTML = "";
-    anims.forEach(a => {
-      const el = document.createElement("div");
-      el.className = "anim";
-      const assets = a.assets || [];
-      el.innerHTML =
-        '<div class="id">' + esc(a.id) + '</div>' +
-        '<div class="assets">' + (assets.length ? assets.length + " asset" + (assets.length>1?"s":"") + " · " + assets.map(esc).join(", ") : "no assets") + '</div>' +
-        '<div class="ctl">' +
-          '<button class="primary" data-act="start">Play</button>' +
-          '<label style="color:var(--muted);font:500 11px/1 var(--mono)">cycles ' +
-            '<input type="number" min="0" value="0" data-cycles title="0 = loop forever" /></label>' +
-        '</div>';
-      el.querySelector('[data-act=start]').addEventListener("click", async () => {
-        const cycles = Number(el.querySelector('[data-cycles]').value) || 0;
-        try { await api("/anim/start", { method: "POST", body: { animname: a.id, cycles } }); toast("Playing " + a.id, "ok"); }
-        catch (e) { toast("Start failed: " + e.message, "err"); }
+    performDraw('asset', { ...assetFields(cell), objname: makeObjname('asset') });
+    return;
+  }
+
+  state.drag = { mode: 'shape', start: cell, moved: false };
+  updateDragPreview(cell);
+}
+
+function onPointerMove(event) {
+  if (state.drag && state.drag.mode === 'pan') {
+    const stage = $('canvasStage');
+    stage.scrollLeft -= event.clientX - state.drag.x;
+    stage.scrollTop -= event.clientY - state.drag.y;
+    state.drag.x = event.clientX;
+    state.drag.y = event.clientY;
+    return;
+  }
+
+  const cell = getCellFromPointer(event);
+  $('cursorPos').textContent = `x ${cell.x}, y ${cell.y}`;
+
+  if (state.drag && state.drag.mode === 'shape') {
+    if (cell.x !== state.drag.start.x || cell.y !== state.drag.start.y) state.drag.moved = true;
+    updateDragPreview(cell);
+    return;
+  }
+
+  if (state.drag && state.drag.mode === 'moveObj') {
+    updateMovePreview(cell);
+    return;
+  }
+
+  const movedCell = !state.hoverCell || state.hoverCell.x !== cell.x || state.hoverCell.y !== cell.y;
+  if (movedCell) state.hoverCell = cell;
+
+  if (state.activeTool === 'select') {
+    // Only re-render when the object under the pointer changes.
+    const hit = hitTest(cell);
+    const ref = hit ? hit.ref : null;
+    canvas.classList.toggle('over-object', Boolean(ref));
+    if (ref !== state.hoverObject) {
+      state.hoverObject = ref;
+      renderOverlay();
+    }
+    return;
+  }
+
+  if (movedCell && (state.activeTool === 'text' || state.activeTool === 'asset')) renderOverlay();
+}
+
+// Ghost of the dragged object at its new position, plus a marker where it
+// started. The live view still shows it in the old spot until the move lands.
+function updateMovePreview(cell) {
+  const drag = state.drag;
+  const stored = state.objectStore[drag.ref];
+  if (!stored) return;
+  if (cell.x !== drag.start.x || cell.y !== drag.start.y) drag.moved = true;
+  const pos = clampPosition(
+    drag.bounds,
+    drag.origin.x + (cell.x - drag.start.x),
+    drag.origin.y + (cell.y - drag.start.y),
+  );
+  drag.target = pos;
+  state.preview = {
+    key: stored.key,
+    fields: { ...stored.fields, ...pos },
+    box: { x: pos.x, y: pos.y, w: drag.bounds.w, h: drag.bounds.h },
+  };
+  $('cursorPos').textContent = `x ${pos.x}, y ${pos.y}`;
+  renderOverlay();
+}
+
+function updateDragPreview(cell) {
+  const start = state.drag.start;
+  if (state.activeTool === 'line') {
+    state.preview = { key: 'line', fields: lineFields(start, cell) };
+  } else if (state.activeTool === 'rectangle') {
+    state.preview = { key: 'rectangle', fields: rectFields(boxExtent(start, cell)) };
+  } else if (state.activeTool === 'scroll') {
+    const extent = state.drag.moved ? boxExtent(start, cell) : scrollClickExtent(start);
+    state.preview = { key: 'scrolling_text', fields: scrollFields(extent), box: { x: extent.x, y: extent.y, w: extent.dx, h: extent.dy } };
+  }
+  renderOverlay();
+}
+
+function onPointerUp(event) {
+  const drag = state.drag;
+  state.drag = null;
+  canvas.classList.remove('panning', 'dragging-object');
+
+  if (drag && drag.mode === 'moveObj') {
+    state.preview = null;
+    if (drag.moved && drag.target) moveSelectedTo(drag.target.x, drag.target.y, false);
+    else renderOverlay();
+    return;
+  }
+
+  if (!drag || drag.mode !== 'shape') return;
+
+  const cell = getCellFromPointer(event);
+  if (state.activeTool === 'line') {
+    performDraw('line', { ...lineFields(drag.start, cell), objname: makeObjname('line') });
+  } else if (state.activeTool === 'rectangle') {
+    performDraw('rectangle', { ...rectFields(boxExtent(drag.start, cell)), objname: makeObjname('rect') });
+  } else if (state.activeTool === 'scroll') {
+    const moved = drag.moved || cell.x !== drag.start.x || cell.y !== drag.start.y;
+    const extent = moved ? boxExtent(drag.start, cell) : scrollClickExtent(drag.start);
+    performDraw('scrolling_text', { ...scrollFields(extent), objname: makeObjname('scroll') });
+  }
+  state.preview = null;
+  renderOverlay();
+}
+
+function onPointerCancel() {
+  state.drag = null;
+  state.preview = null;
+  canvas.classList.remove('panning', 'dragging-object');
+  renderOverlay();
+}
+
+function onPointerLeave() {
+  if (state.drag) return; // pointer capture keeps the drag alive
+  state.hoverCell = null;
+  state.hoverObject = null;
+  canvas.classList.remove('over-object');
+  $('cursorPos').textContent = 'x –, y –';
+  renderOverlay();
+}
+
+// =====================================================================
+// Overlay actions with undo / redo
+// =====================================================================
+// Each action is a { do, undo } pair of promise-returning functions. `do`
+// also runs on redo, so it must be safe to call more than once.
+
+function markMutation() {
+  state.mutationSeq += 1;
+}
+
+function postFrame(frame) {
+  markMutation();
+  return apiPost('/framebuffer/draw', frame);
+}
+
+function clearRefs(refs) {
+  return postFrame({ clear: { obj: refs } });
+}
+
+function drawObj(key, fields) {
+  return postFrame({ [key]: fields });
+}
+
+// Several objects in one request, in order (keeps their stacking order).
+function drawMany(objects) {
+  if (!objects.length) return Promise.resolve();
+  return postFrame({ drawables: objects.map((o) => ({ [o.key]: o.fields })) });
+}
+
+function clearOverlay() {
+  return postFrame({ clear: {} });
+}
+
+function drawAction(key, fields) {
+  const name = fields.objname;
+  const snapshot = { ...fields };
+  return {
+    do: () => drawObj(key, snapshot).then(() => { state.objectStore[name] = { key, fields: snapshot }; }),
+    undo: () => clearRefs([name]).then(() => { delete state.objectStore[name]; }),
+  };
+}
+
+function drawManyAction(objects) {
+  const snapshot = objects.map((o) => ({ key: o.key, fields: { ...o.fields } }));
+  return {
+    do: () => drawMany(snapshot).then(() => { snapshot.forEach((o) => { state.objectStore[o.fields.objname] = o; }); }),
+    undo: () => clearRefs(snapshot.map((o) => o.fields.objname)).then(() => {
+      snapshot.forEach((o) => { delete state.objectStore[o.fields.objname]; });
+    }),
+  };
+}
+
+// `ref` is what clears the old object: its objname, or its "f<id>" handle.
+function editAction(ref, key, fields, previous) {
+  const name = fields.objname;
+  return {
+    do: () => clearRefs([ref]).then(() => drawObj(key, fields)).then(() => {
+      if (ref !== name) delete state.objectStore[ref];
+      state.objectStore[name] = { key, fields };
+    }),
+    undo: () => clearRefs([name]).then(() => (previous ? drawObj(previous.key, previous.fields) : null)).then(() => {
+      delete state.objectStore[name];
+      if (previous) state.objectStore[previous.fields.objname] = previous;
+    }),
+  };
+}
+
+function removeAction(ref, previous) {
+  return {
+    do: () => clearRefs([ref]).then(() => { delete state.objectStore[ref]; }),
+    undo: () => (previous
+      ? drawObj(previous.key, previous.fields).then(() => { state.objectStore[previous.fields.objname] = previous; })
+      : Promise.reject(new Error("This object was drawn outside this page, so its values aren't known and it can't be restored."))),
+  };
+}
+
+// Replace the whole overlay with `objects` (null = just clear it).
+function replaceOverlayAction(objects) {
+  const previous = orderedTrackedObjects().map((o) => ({ key: o.key, fields: { ...o.fields } }));
+  const next = (objects || []).map((o) => ({ key: o.key, fields: { ...o.fields } }));
+  const restore = (list) => clearOverlay().then(() => drawMany(list)).then(() => {
+    state.objectStore = {};
+    list.forEach((o) => { state.objectStore[o.fields.objname] = o; });
+  });
+  return { do: () => restore(next), undo: () => restore(previous) };
+}
+
+function updateHistoryButtons() {
+  $('undoButton').disabled = state.undoStack.length === 0;
+  $('redoButton').disabled = state.redoStack.length === 0;
+}
+
+function afterMutation() {
+  updateHistoryButtons();
+  if (state.activeTool === 'select') renderSelectionPanel();
+  loadLiveView();
+  refreshComposition();
+}
+
+function runAction(action) {
+  return action.do().then(() => {
+    state.undoStack.push(action);
+    if (state.undoStack.length > 200) state.undoStack.shift();
+    state.redoStack = [];
+    afterMutation();
+  });
+}
+
+function undo() {
+  const action = state.undoStack.pop();
+  if (!action) return;
+  action.undo().then(() => {
+    state.redoStack.push(action);
+    afterMutation();
+  }).catch((error) => {
+    state.undoStack.push(action);
+    fail(error);
+  });
+}
+
+function redo() {
+  const action = state.redoStack.pop();
+  if (!action) return;
+  action.do().then(() => {
+    state.undoStack.push(action);
+    afterMutation();
+  }).catch((error) => {
+    state.redoStack.push(action);
+    fail(error);
+  });
+}
+
+function performDraw(key, fields) {
+  return runAction(drawAction(key, fields)).catch(fail);
+}
+
+function clearAllObjects() {
+  runAction(replaceOverlayAction(null))
+    .then(() => toast('Overlay cleared'))
+    .catch(fail);
+}
+
+// Raw frame JSON from the Draw tab. Drawables get objnames so they show up
+// as editable, undoable objects like everything else.
+const DRAWABLE_KEYS = ['text', 'scrolling_text', 'line', 'rectangle', 'asset'];
+
+function sendRawFrame() {
+  let frame;
+  try {
+    frame = JSON.parse($('rawFrameInput').value);
+  } catch (e) {
+    toast(`That isn't valid JSON: ${e.message}`, 'error');
+    return;
+  }
+  if (!frame || typeof frame !== 'object' || Array.isArray(frame)) {
+    toast('Send one frame object, e.g. { "text": { … } }.', 'error');
+    return;
+  }
+
+  const objects = [];
+  const collect = (key, value) => {
+    const list = Array.isArray(value) ? value : [value];
+    list.forEach((fields) => {
+      if (fields && typeof fields === 'object') {
+        objects.push({ key, fields: { ...fields, objname: fields.objname || makeObjname(key === 'rectangle' ? 'rect' : key) } });
+      }
+    });
+  };
+  if (Array.isArray(frame.drawables)) {
+    frame.drawables.forEach((item) => {
+      const key = item && Object.keys(item)[0];
+      if (DRAWABLE_KEYS.includes(key)) collect(key, item[key]);
+    });
+  } else {
+    DRAWABLE_KEYS.forEach((key) => { if (frame[key] !== undefined) collect(key, frame[key]); });
+  }
+
+  const hasClear = frame.clear !== undefined;
+  if (frame.load_anim !== undefined) toast('load_anim only works inside animations; it was ignored here.', 'error');
+  if (!objects.length && !hasClear) {
+    toast('No drawable objects found in that frame.', 'error');
+    return;
+  }
+
+  const clearPart = hasClear ? { clear: frame.clear } : null;
+  const before = { ...state.objectStore };
+  const action = {
+    do: () => (clearPart ? postFrame(clearPart) : Promise.resolve()).then(() => drawMany(objects)).then(() => {
+      if (clearPart) pruneStoreAfterClear(clearPart.clear);
+      objects.forEach((o) => { state.objectStore[o.fields.objname] = o; });
+    }),
+    undo: () => clearRefs(objects.map((o) => o.fields.objname)).then(() => {
+      objects.forEach((o) => { delete state.objectStore[o.fields.objname]; });
+      if (!clearPart) return null;
+      const lost = Object.values(before).filter((o) => !state.objectStore[o.fields.objname]);
+      return drawMany(lost).then(() => { lost.forEach((o) => { state.objectStore[o.fields.objname] = o; }); });
+    }),
+  };
+  runAction(action)
+    .then(() => toast(objects.length ? `Sent ${objects.length} object${objects.length === 1 ? '' : 's'}` : 'Sent clear'))
+    .catch(fail);
+}
+
+function pruneStoreAfterClear(clear) {
+  if (!clear || !Array.isArray(clear.obj)) {
+    state.objectStore = {};
+    return;
+  }
+  clear.obj.forEach((ref) => { delete state.objectStore[ref]; });
+}
+
+// =====================================================================
+// Live view
+// =====================================================================
+
+let liveBusy = false;
+
+function loadLiveView() {
+  if (liveBusy) return Promise.resolve();
+  liveBusy = true;
+  return apiGet('/framebuffer/get')
+    .then((data) => {
+      if (data && data.data) {
+        setMatrixSize(data.width || state.width, data.height || state.height);
+        renderLiveFrame(data);
+      }
+      noteConnection(true);
+    })
+    .catch((error) => { if (error.network) noteConnection(false); })
+    .finally(() => { liveBusy = false; });
+}
+
+function renderLiveFrame(data) {
+  const w = Number(data.width || state.width);
+  const h = Number(data.height || state.height);
+  const bin = atob(data.data);
+  const n = Math.min(bin.length, w * h * 4);
+  const img = liveCtx.createImageData(w, h);
+  const out = img.data;
+  // BGRA → RGBA. Pixels with nothing drawn (alpha 0) stay transparent and
+  // show the dark stage behind, like an unlit LED.
+  for (let i = 0; i + 3 < n; i += 4) {
+    out[i] = bin.charCodeAt(i + 2);
+    out[i + 1] = bin.charCodeAt(i + 1);
+    out[i + 2] = bin.charCodeAt(i);
+    out[i + 3] = bin.charCodeAt(i + 3);
+  }
+  if (liveCanvas.width !== w) liveCanvas.width = w;
+  if (liveCanvas.height !== h) liveCanvas.height = h;
+  liveCtx.putImageData(img, 0, 0);
+}
+
+// =====================================================================
+// Composition (Objects tab)
+// =====================================================================
+
+const OBJECT_TYPE_LABELS = {
+  text: 'Text',
+  scrolling_text: 'Scroll',
+  line: 'Line',
+  rectangle: 'Rect',
+  asset: 'Asset',
+};
+
+function layerRef(layer) {
+  return layer.objname || (layer.id ? `f${layer.id}` : '');
+}
+
+function refreshComposition() {
+  const seq = state.mutationSeq;
+  return apiGet('/framebuffer/getcomposition')
+    .then((data) => {
+      if (seq !== state.mutationSeq) return; // overlay changed mid-request
+      if (data && data.width && data.height) setMatrixSize(data.width, data.height);
+      state.overlayLayers = Array.isArray(data?.api) ? data.api : [];
+      state.primaryLayers = Array.isArray(data?.primary) ? data.primary : [];
+
+      // Forget values for objects that are gone (cleared elsewhere).
+      const present = new Set(state.overlayLayers.map((l) => l.objname).filter(Boolean));
+      Object.keys(state.objectStore).forEach((name) => { if (!present.has(name)) delete state.objectStore[name]; });
+      if (state.selected && !state.objectStore[state.selected]) state.selected = null;
+      if (state.activeTool === 'select') renderSelectionPanel();
+
+      renderComposition();
+    })
+    .catch(() => {
+      // Best effort — a failing poll shouldn't spam toasts.
+    });
+}
+
+function renderComposition() {
+  const tree = $('compositionTree');
+  $('compositionCount').textContent = String(state.overlayLayers.length);
+  if (!state.overlayLayers.length) {
+    tree.innerHTML = '<li class="empty">Nothing on the overlay yet — draw something on the canvas.</li>';
+  } else {
+    tree.innerHTML = state.overlayLayers.map((layer, index) => {
+      const type = String(layer.type || '');
+      const label = OBJECT_TYPE_LABELS[type] || type || 'Object';
+      const stored = layer.objname && state.objectStore[layer.objname];
+      const detail = stored && (stored.fields.text || stored.fields.name) ? ` — ${stored.fields.text || stored.fields.name}` : '';
+      const name = layer.objname || `unnamed (f${layer.id})`;
+      return `<li><button type="button" class="tree-item" data-index="${index}"><span class="type-badge">${esc(label)}</span><span class="obj-name">${esc(name + detail)}</span><span class="edit-hint">✎</span></button></li>`;
+    }).join('');
+    tree.querySelectorAll('.tree-item').forEach((button) => {
+      const layer = state.overlayLayers[Number(button.dataset.index)];
+      button.addEventListener('click', () => {
+        if (!layer) return;
+        if (layer.objname && state.objectStore[layer.objname]) setSelection(layer.objname);
+        openObjectEditor(layer);
       });
-      animlist.appendChild(el);
+      button.addEventListener('mouseenter', () => setHighlightFor(layer));
+      button.addEventListener('mouseleave', () => setHighlightFor(null));
     });
   }
 
-  document.getElementById("refresh").addEventListener("click", loadAnims);
-  document.getElementById("stopall").addEventListener("click", async () => {
-    try { await api("/anim/stop", { method: "POST" }); toast("Playback stopped", "ok"); }
-    catch (e) { toast("Stop failed: " + e.message, "err"); }
-  });
-
-  // ── draw / overlay ────────────────────────────────────────────────────
-  const demos = {
-    text: { text: { x: 0, y: 0, text: "hi", font: "5x7", color: "#ffb000" }, duration: 0 },
-    rect: { rectangle: { x: 0, y: 0, dx: 12, dy: 8, border: 1, color: "#36e06b" }, duration: 0 },
-    line: { line: { x: 0, y: 0, dx: 15, dy: 15, thickness: 1, color: "#ff5c57" }, duration: 0 }
-  };
-  document.querySelectorAll("[data-demo]").forEach(b => b.addEventListener("click", () => {
-    document.getElementById("drawjson").value = JSON.stringify(demos[b.dataset.demo], null, 2);
-  }));
-  document.getElementById("drawsend").addEventListener("click", async () => {
-    let body;
-    try { body = JSON.parse(document.getElementById("drawjson").value); }
-    catch (e) { return toast("That's not valid JSON.", "err"); }
-    try { await api("/framebuffer/draw", { method: "POST", body }); toast("Drawn to overlay", "ok"); }
-    catch (e) { toast("Draw failed: " + e.message, "err"); }
-  });
-  document.getElementById("drawclear").addEventListener("click", async () => {
-    try { await api("/framebuffer/draw", { method: "POST", body: { clear: {} } }); toast("Overlay cleared", "ok"); }
-    catch (e) { toast("Clear failed: " + e.message, "err"); }
-  });
-
-  // ── uploads ───────────────────────────────────────────────────────────
-  document.getElementById("ua-send").addEventListener("click", async () => {
-    const animname = document.getElementById("ua-name").value.trim();
-    if (!animname) return toast("Give the animation an id.", "err");
-    let anim;
-    try { anim = JSON.parse(document.getElementById("ua-json").value); }
-    catch (e) { return toast("anim.json isn't valid JSON.", "err"); }
-    try { await api("/file/uploadanim", { method: "POST", body: { animname, anim } }); toast("Uploaded " + animname, "ok"); loadAnims(); }
-    catch (e) { toast("Upload failed: " + e.message, "err"); }
-  });
-
-  document.getElementById("uas-send").addEventListener("click", async () => {
-    const animname = document.getElementById("uas-name").value.trim();
-    const file = document.getElementById("uas-file").files[0];
-    if (!animname) return toast("Give the animation id the asset belongs to.", "err");
-    if (!file) return toast("Pick a .bmp file first.", "err");
-    try {
-      const buf = new Uint8Array(await file.arrayBuffer());
-      let bin = ""; for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-      const data = btoa(bin);
-      await api("/file/uploadasset", { method: "POST", body: { animname, filename: file.name, data } });
-      toast("Uploaded " + file.name, "ok"); loadAnims();
-    } catch (e) { toast("Asset upload failed: " + e.message, "err"); }
-  });
-
-  // ── info ──────────────────────────────────────────────────────────────
-  function refreshInfo() {
-    const set = (id, p) => p.then(d => document.getElementById(id).textContent = JSON.stringify(d, null, 2))
-                            .catch(e => document.getElementById(id).textContent = "— (" + e.message + ")");
-    set("fsout", api("/file/fsstatus"));
-    set("gpioout", api("/display/gpiopins"));
-    set("compout", api("/framebuffer/getcomposition"));
+  const primary = $('primaryTree');
+  $('primaryCount').textContent = String(state.primaryLayers.length);
+  if (!state.primaryLayers.length) {
+    primary.innerHTML = `<li class="empty">${state.status.running ? 'The animation has nothing on screen right now.' : 'No animation is playing.'}</li>`;
+  } else {
+    primary.innerHTML = state.primaryLayers.map((layer) => {
+      const type = String(layer.type || '');
+      const label = OBJECT_TYPE_LABELS[type] || type || 'Object';
+      return `<li><div class="tree-item readonly"><span class="type-badge">${esc(label)}</span><span class="obj-name">${esc(layer.objname || 'unnamed')}</span><span class="obj-id">frame ${esc(String(layer.id || '').replace(':', ', #'))}</span></div></li>`;
+    }).join('');
   }
-  document.getElementById("info-refresh").addEventListener("click", refreshInfo);
+}
 
-  // ── boot ──────────────────────────────────────────────────────────────
-  initBrightness();
-  loadAnims();
-  pollStatus();
-  setInterval(pollFrame, 600);
-  setInterval(pollStatus, 2000);
-  pollFrame();
-})();
+function setHighlightFor(layer) {
+  const stored = layer && layer.objname ? state.objectStore[layer.objname] : null;
+  state.highlight = stored ? objectBounds(stored.key, stored.fields) : null;
+  renderOverlay();
+}
+
+// Tracked overlay objects in their on-screen stacking order.
+function orderedTrackedObjects() {
+  const seen = new Set();
+  const out = [];
+  state.overlayLayers.forEach((layer) => {
+    const stored = layer.objname && state.objectStore[layer.objname];
+    if (stored && !seen.has(layer.objname)) {
+      seen.add(layer.objname);
+      out.push(stored);
+    }
+  });
+  Object.entries(state.objectStore).forEach(([name, stored]) => {
+    if (!seen.has(name)) out.push(stored);
+  });
+  return out;
+}
+
+function untrackedOverlayCount() {
+  return state.overlayLayers.filter((layer) => !(layer.objname && state.objectStore[layer.objname])).length;
+}
+
+// =====================================================================
+// Object editor
+// =====================================================================
+// The API has no partial update: editing clears the object and draws a new
+// one under the same name.
+
+const FONT_FIELD = { key: 'font', label: 'Font', type: 'font', value: '5x7' };
+const COLOR_FIELD = { key: 'color', label: 'Color', type: 'color', value: '#ff0000' };
+
+const FIELD_DEFS = {
+  text: [
+    { key: 'x', label: 'X', type: 'number', value: 0 },
+    { key: 'y', label: 'Y', type: 'number', value: 0 },
+    { key: 'text', label: 'Text', type: 'text', value: 'HELLO' },
+    FONT_FIELD,
+    COLOR_FIELD,
+  ],
+  scrolling_text: [
+    { key: 'x', label: 'Window X', type: 'number', value: 0 },
+    { key: 'y', label: 'Window Y', type: 'number', value: 0 },
+    { key: 'dx', label: 'Window width', type: 'number', value: 32, min: 1 },
+    { key: 'dy', label: 'Window height', type: 'number', value: 7, min: 1 },
+    { key: 'text', label: 'Text', type: 'text', value: 'Hello' },
+    FONT_FIELD,
+    { key: 'scroll_speed', label: 'Speed (px/s)', type: 'number', value: 12, min: 0, step: 'any' },
+    { key: 'scroll_direction', label: 'Direction', type: 'select', value: 'horizontal', options: ['horizontal', 'vertical'] },
+    COLOR_FIELD,
+  ],
+  line: [
+    { key: 'x', label: 'Start X', type: 'number', value: 0 },
+    { key: 'y', label: 'Start Y', type: 'number', value: 0 },
+    { key: 'dx', label: 'Δx to end', type: 'number', value: 8 },
+    { key: 'dy', label: 'Δy to end', type: 'number', value: 0 },
+    { key: 'thickness', label: 'Thickness', type: 'number', value: 1, min: 1, max: 16 },
+    COLOR_FIELD,
+  ],
+  rectangle: [
+    { key: 'x', label: 'X', type: 'number', value: 0 },
+    { key: 'y', label: 'Y', type: 'number', value: 0 },
+    { key: 'dx', label: 'Width', type: 'number', value: 8, min: 1 },
+    { key: 'dy', label: 'Height', type: 'number', value: 8, min: 1 },
+    { key: 'border', label: 'Border (0 = filled)', type: 'number', value: 1, min: 0 },
+    COLOR_FIELD,
+  ],
+  asset: [
+    { key: 'x', label: 'X', type: 'number', value: 0 },
+    { key: 'y', label: 'Y', type: 'number', value: 0 },
+    { key: 'name', label: 'Asset', type: 'asset', value: '' },
+    { key: 'color', label: 'Recolor (empty = original colors)', type: 'color', value: '', optional: true },
+  ],
+};
+
+function fontOptions(selected) {
+  return Object.keys(FONTS).map((f) => `<option value="${f}"${f === selected ? ' selected' : ''}>${f}</option>`).join('');
+}
+
+function assetOptions(selected) {
+  const groups = state.anims.filter((a) => (a.assets || []).length).map((a) => {
+    const opts = a.assets.map((file) => {
+      const ref = `${a.id}/${file}`;
+      return `<option value="${esc(ref)}"${ref === selected ? ' selected' : ''}>${esc(file)}</option>`;
+    }).join('');
+    return `<optgroup label="${esc(a.id)}">${opts}</optgroup>`;
+  }).join('');
+  const known = state.anims.some((a) => (a.assets || []).some((f) => `${a.id}/${f}` === selected));
+  const extra = selected && !known ? `<option value="${esc(selected)}" selected>${esc(selected)}</option>` : '';
+  return extra + groups || '<option value="">No assets yet</option>';
+}
+
+function fieldHtml(field, current) {
+  const id = `objField_${field.key}`;
+  const has = current && current[field.key] !== undefined;
+  const val = has ? current[field.key] : field.value;
+  const attrs = ['min', 'max', 'step'].map((a) => (field[a] !== undefined ? ` ${a}="${field[a]}"` : '')).join('');
+  const wrap = (inner) => `<label class="tab-field"><span>${esc(field.label)}</span>${inner}</label>`;
+
+  switch (field.type) {
+    case 'font':
+      return wrap(`<select id="${id}">${fontOptions(val)}</select>`);
+    case 'asset':
+      return wrap(`<select id="${id}">${assetOptions(val)}</select>`);
+    case 'select':
+      return wrap(`<select id="${id}">${field.options.map((o) => `<option value="${o}"${o === val ? ' selected' : ''}>${o}</option>`).join('')}</select>`);
+    case 'color': {
+      const hex = parseHex(val) ? String(val).slice(0, 7) : '#ff0000';
+      return wrap(`<div class="asset-settings-row"><input id="${id}" type="text" value="${esc(val)}" placeholder="${field.optional ? 'none' : '#rrggbb or linear-gradient(…)'}" spellcheck="false" /><input id="${id}_picker" type="color" value="${esc(hex)}" title="Pick a color" /></div>`);
+    }
+    case 'number':
+      return wrap(`<input id="${id}" type="number"${attrs} value="${esc(val)}" />`);
+    default:
+      return wrap(`<input id="${id}" type="text" value="${esc(val)}" />`);
+  }
+}
+
+function openObjectEditor(layer) {
+  state.editingLayer = layer;
+  const key = OBJECT_TYPE_LABELS[layer.type] ? layer.type : 'text';
+  const defs = FIELD_DEFS[key];
+  const stored = layer.objname ? state.objectStore[layer.objname] : null;
+
+  $('objectEditTitle').textContent = `Edit ${OBJECT_TYPE_LABELS[key]} — ${layer.objname || `f${layer.id}`}`;
+  let hint = stored
+    ? 'Change what you need and apply — the object is redrawn with the new values.'
+    : "This object was drawn outside this page, so its current values aren't known. The fields show defaults; apply to redraw it with them.";
+  if (!layer.objname) hint += ` It has no name, so it's addressed by its frame handle f${layer.id} — other unnamed objects sent in the same request share that handle and are affected too.`;
+  $('objectEditHint').textContent = hint;
+  $('objectEditFields').innerHTML = defs.map((f) => fieldHtml(f, stored ? stored.fields : null)).join('');
+
+  defs.filter((f) => f.type === 'color').forEach((f) => {
+    const text = $(`objField_${f.key}`);
+    const picker = $(`objField_${f.key}_picker`);
+    picker.addEventListener('input', () => {
+      const alpha = parseHex(text.value)?.a ?? 255;
+      text.value = hexWithAlpha(picker.value, alpha);
+    });
+  });
+
+  state.highlight = stored ? objectBounds(stored.key, stored.fields) : null;
+  renderOverlay();
+  openModal('objectEditModal');
+}
+
+function closeObjectEditor() {
+  state.editingLayer = null;
+  state.highlight = null;
+  renderOverlay();
+  closeModal('objectEditModal');
+}
+
+function readObjectFields(key) {
+  const payload = {};
+  FIELD_DEFS[key].forEach((field) => {
+    const input = $(`objField_${field.key}`);
+    if (!input) return;
+    const raw = input.value.trim();
+    if (field.type === 'number') {
+      payload[field.key] = raw === '' ? field.value : Number(raw);
+    } else if (field.type === 'color') {
+      if (raw) payload[field.key] = raw;
+      else if (!field.optional) payload[field.key] = field.value;
+    } else if (raw !== '' || field.type === 'text') {
+      payload[field.key] = field.type === 'text' ? input.value : raw;
+    }
+  });
+  return payload;
+}
+
+function applyObjectEdit() {
+  const layer = state.editingLayer;
+  if (!layer) return;
+  const key = OBJECT_TYPE_LABELS[layer.type] ? layer.type : 'text';
+  const payload = readObjectFields(key);
+  if (payload.color && !isValidColorSpec(payload.color)) {
+    toast(`"${payload.color}" isn't a color the sign understands — it would show up white. Use #rgb, #rrggbb, #rrggbbaa or linear-gradient(…).`, 'error');
+    return;
+  }
+  if (key === 'asset' && !payload.name) {
+    toast('Choose an asset.', 'error');
+    return;
+  }
+  const ref = layerRef(layer);
+  payload.objname = layer.objname || makeObjname(key === 'rectangle' ? 'rect' : key);
+  const stored = layer.objname ? state.objectStore[layer.objname] : null;
+  const previous = stored ? { key: stored.key, fields: { ...stored.fields } } : null;
+
+  runAction(editAction(ref, key, payload, previous))
+    .then(() => {
+      toast(`Updated ${payload.objname}`);
+      closeObjectEditor();
+    })
+    .catch(fail);
+}
+
+function removeObject() {
+  const layer = state.editingLayer;
+  if (!layer) return;
+  const ref = layerRef(layer);
+  if (!ref) {
+    toast("This object has no name or handle the sign accepts, so it can't be removed on its own. Use Clear overlay.", 'error');
+    return;
+  }
+  const stored = layer.objname ? state.objectStore[layer.objname] : null;
+  const previous = stored ? { key: stored.key, fields: { ...stored.fields } } : null;
+  runAction(removeAction(ref, previous))
+    .then(() => {
+      toast(`Removed ${layer.objname || ref}`);
+      closeObjectEditor();
+    })
+    .catch(fail);
+}
+
+// =====================================================================
+// Files: animation list + storage status
+// =====================================================================
+
+function animIds() {
+  return state.anims.map((a) => a.id);
+}
+
+function refreshFiles() {
+  return Promise.all([
+    apiGet('/file/ls'),
+    apiGet('/file/fsstatus').catch(() => null),
+  ]).then(([files, fs]) => {
+    state.anims = (Array.isArray(files?.anims) ? files.anims : [])
+      .map((a) => ({ id: String(a.id || a.name || ''), assets: Array.isArray(a.assets) ? a.assets.map(String) : [] }))
+      .filter((a) => a.id)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    state.animMeta.clear();
+    // Keep only the ids still present, so a folder that has since gained an
+    // anim.json is re-checked.
+    state.noDocAnims = new Set([...state.noDocAnims].filter((id) => animIds().includes(id)));
+    if (fs) state.deviceInfo.fs = fs;
+    renderFileList(fs);
+    renderAnimSelectors();
+    renderAssets();
+    renderDeviceInfo();
+    noteConnection(true);
+  }).catch(fail);
+}
+
+function renderFileList(fs) {
+  const fsEl = $('fsStatus');
+  if (fs && fs.fs) {
+    const pct = fs.total ? Math.min(100, (fs.used / fs.total) * 100) : 0;
+    const label = { sd: 'SD card', littlefs: 'Internal flash' }[fs.fs] || fs.fs;
+    fsEl.innerHTML = `<span><strong>${esc(label)}</strong></span><span>${formatBytes(fs.used)} of ${formatBytes(fs.total)} used</span><span>${formatBytes(fs.free)} free</span><div class="fs-bar"><i style="width:${pct.toFixed(1)}%"></i></div>`;
+  }
+
+  const list = $('fileList');
+  const playing = animIdFromStatus(state.status.animname);
+  const rows = state.anims.map((anim) => {
+    const noDoc = state.noDocAnims.has(anim.id);
+    const assets = `${anim.assets.length} asset${anim.assets.length === 1 ? '' : 's'}`;
+    const note = noDoc
+      ? `${assets} — no animation saved yet`
+      : `${assets}${state.status.running && anim.id === playing ? ' — playing' : ''}`;
+    const actions = noDoc
+      ? `<button type="button" data-act="edit" data-name="${esc(anim.id)}" title="Start an animation here">New</button>`
+      : `<button type="button" data-act="play" data-name="${esc(anim.id)}" title="Play">▶</button>
+         <button type="button" data-act="edit" data-name="${esc(anim.id)}">Edit</button>
+         <a class="link-button" href="${esc(downloadUrl(`/anim/${anim.id}/anim.json`))}" download="${esc(anim.id)}.json" title="Download anim.json">⤓</a>`;
+    return `
+    <div class="file-row${state.status.running && anim.id === playing ? ' playing' : ''}">
+      <div class="file-name">
+        <strong>${esc(anim.id)}</strong><br />
+        <small>${note}</small>
+      </div>
+      <div class="file-actions">${actions}</div>
+    </div>`;
+  }).join('');
+  const config = `
+    <div class="file-row">
+      <div class="file-name"><strong>config.json</strong><br /><small>Panel layout and Wi-Fi settings</small></div>
+      <div class="file-actions"><a class="link-button" href="${esc(downloadUrl('/config.json'))}" download="config.json" title="Download config.json">⤓</a></div>
+    </div>`;
+  list.innerHTML = (rows || '<div class="empty">No animations on the sign yet. Save the overlay, build one in Animate, or start from New animation.</div>') + config;
+
+  list.querySelectorAll('[data-act="play"]').forEach((b) => b.addEventListener('click', () => startAnimation(b.dataset.name, 0, {})));
+  list.querySelectorAll('[data-act="edit"]').forEach((b) => b.addEventListener('click', () => {
+    const id = b.dataset.name;
+    if (state.noDocAnims.has(id)) openJsonEditor({ name: id, doc: ANIM_TEMPLATE });
+    else openJsonEditorFor(id);
+  }));
+}
+
+let syncingSelectors = false;
+
+function renderAnimSelectors() {
+  if (syncingSelectors) return;
+  syncingSelectors = true;
+  const ids = animIds().filter((id) => !state.noDocAnims.has(id));
+  const fill = (select, emptyLabel) => {
+    const prev = select.value;
+    select.innerHTML = ids.length
+      ? ids.map((id) => `<option value="${esc(id)}">${esc(id)}</option>`).join('')
+      : `<option value="">${emptyLabel}</option>`;
+    if (ids.includes(prev)) select.value = prev;
+  };
+  fill($('animationSelector'), 'No animations yet');
+  fill($('stepAnimSelect'), 'No animations yet');
+  // The datalist keeps every folder, since an asset can be uploaded into one
+  // that has no animation yet.
+  $('animIdList').innerHTML = animIds().map((id) => `<option value="${esc(id)}"></option>`).join('');
+  syncingSelectors = false;
+  loadParamsForSelected();
+}
+
+// =====================================================================
+// Assets
+// =====================================================================
+
+function renderAssets() {
+  // Asset tool dropdown: one optgroup per animation.
+  const select = $('assetSelect');
+  const all = state.anims.flatMap((a) => a.assets.map((f) => `${a.id}/${f}`));
+  if (state.selectedAsset && !all.includes(state.selectedAsset)) state.selectedAsset = '';
+  if (!state.selectedAsset && all.length) state.selectedAsset = all[0];
+  select.innerHTML = all.length ? assetOptions(state.selectedAsset) : '<option value="">No assets yet</option>';
+  select.value = state.selectedAsset;
+
+  const host = $('assetList');
+  const groups = state.anims.filter((a) => a.assets.length);
+  if (!groups.length) {
+    host.innerHTML = '<div class="empty">No assets yet. Upload an image or draw one.</div>';
+    return;
+  }
+  host.innerHTML = groups.map((anim) => `
+    <div class="asset-group">
+      <h4>${esc(anim.id)}</h4>
+      <div class="asset-grid">
+        ${anim.assets.map((file) => {
+          const ref = `${anim.id}/${file}`;
+          return `<div class="asset-card${ref === state.selectedAsset ? ' selected' : ''}" data-ref="${esc(ref)}">
+            <button type="button" class="thumb" data-act="use" title="Draw with this asset"><canvas></canvas></button>
+            <div class="asset-name" title="${esc(file)}">${esc(file)}</div>
+            <div class="asset-meta">…</div>
+            <div class="asset-actions">
+              <button type="button" data-act="edit" title="Open in the asset editor">Edit</button>
+              <a class="link-button" href="${esc(downloadUrl(`/anim/${anim.id}/assets/${file}`))}" download="${esc(file)}" title="Download">⤓</a>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`).join('');
+
+  host.querySelectorAll('.asset-card').forEach((card) => {
+    const ref = card.dataset.ref;
+    card.querySelector('[data-act="use"]').addEventListener('click', () => selectAsset(ref, true));
+    card.querySelector('[data-act="edit"]').addEventListener('click', () => openAssetEditor(ref));
+    loadAssetThumb(card, ref);
+  });
+}
+
+function loadAssetThumb(card, ref) {
+  const meta = card.querySelector('.asset-meta');
+  ensureAsset(ref).then((asset) => {
+    const raster = new Raster(asset.w, asset.h);
+    raster.px.set(asset.rgba);
+    raster.toCanvas(card.querySelector('canvas'));
+    if (asset.compatible) {
+      meta.textContent = `${asset.w} × ${asset.h}`;
+    } else {
+      meta.className = 'asset-meta warn';
+      meta.innerHTML = `${asset.bpp}-bit BMP, the sign can't read it.<button type="button" data-act="convert">Convert</button>`;
+      meta.querySelector('[data-act="convert"]').addEventListener('click', () => convertAsset(ref, asset));
+    }
+  }).catch((error) => {
+    meta.className = 'asset-meta warn';
+    meta.textContent = /Unsupported|Not a BMP/.test(error.message) ? 'Not a readable BMP' : 'Preview unavailable';
+  });
+}
+
+function selectAsset(ref, switchTool) {
+  state.selectedAsset = ref;
+  $('assetSelect').value = ref;
+  document.querySelectorAll('.asset-card').forEach((c) => c.classList.toggle('selected', c.dataset.ref === ref));
+  if (switchTool) {
+    setTool('asset');
+    switchTab('draw');
+  }
+  ensureAsset(ref).then(() => renderOverlay()).catch(() => {});
+}
+
+// Re-encode a 24-bit (1.0-era) BMP as 32-bit and overwrite it in place.
+function convertAsset(ref, asset) {
+  const { anim, file } = splitAssetRef(ref);
+  const rgba = new Uint8ClampedArray(asset.rgba);
+  uploadAssetBytes(anim, file, encodeBmp32(asset.w, asset.h, rgba))
+    .then(() => {
+      toast(`Converted ${file} to 32-bit`);
+      return refreshFiles();
+    })
+    .catch(fail);
+}
+
+// Decode any browser-readable image (or BMP) into RGBA, optionally shrunk to
+// fit the matrix.
+// The firmware buffers an upload body in RAM (64 KB cap) and refuses to
+// decode a BMP over 512 KB, so an image is shrunk to fit both before it goes
+// out. Sending a full-resolution photo used to reboot the sign.
+const MAX_ASSET_BYTES = 44000; // 44 KB of BMP ≈ 59 KB of base64 body
+const MAX_ASSET_DIM = 4096;
+
+function assetByteLimitSize(w, h) {
+  const budget = Math.floor((MAX_ASSET_BYTES - 54) / 4);
+  if (w * h <= budget && w <= MAX_ASSET_DIM && h <= MAX_ASSET_DIM) return null;
+  const scale = Math.min(Math.sqrt(budget / (w * h)), MAX_ASSET_DIM / w, MAX_ASSET_DIM / h);
+  return { w: Math.max(1, Math.floor(w * scale)), h: Math.max(1, Math.floor(h * scale)) };
+}
+
+async function imageFileToRgba(file, fitToMatrix) {
+  let w;
+  let h;
+  let draw;
+  if (/\.bmp$/i.test(file.name) || file.type === 'image/bmp') {
+    try {
+      const decoded = decodeBmp(await file.arrayBuffer());
+      w = decoded.w;
+      h = decoded.h;
+      const tmp = new Raster(w, h);
+      tmp.px.set(decoded.rgba);
+      const src = tmp.toCanvas();
+      draw = (c, dw, dh) => c.drawImage(src, 0, 0, dw, dh);
+    } catch (e) {
+      draw = null; // fall back to the browser decoder below
+    }
+  }
+  if (!draw) {
+    const bitmap = await createImageBitmap(file);
+    w = bitmap.width;
+    h = bitmap.height;
+    draw = (c, dw, dh) => c.drawImage(bitmap, 0, 0, dw, dh);
+  }
+
+  let tw = w;
+  let th = h;
+  if (fitToMatrix && (w > state.width || h > state.height)) {
+    const scale = Math.min(state.width / w, state.height / h);
+    tw = Math.max(1, Math.round(w * scale));
+    th = Math.max(1, Math.round(h * scale));
+  }
+  // Hard ceiling even with "shrink" off, so the sign is never sent a body it
+  // has to reject (or, on older firmware, chokes on).
+  const capped = assetByteLimitSize(tw, th);
+  let cappedBySize = false;
+  if (capped) {
+    tw = capped.w;
+    th = capped.h;
+    cappedBySize = true;
+  }
+  const cv = document.createElement('canvas');
+  cv.width = tw;
+  cv.height = th;
+  const c = cv.getContext('2d');
+  c.imageSmoothingEnabled = tw !== w;
+  c.imageSmoothingQuality = 'high';
+  draw(c, tw, th);
+  return {
+    w: tw,
+    h: th,
+    rgba: c.getImageData(0, 0, tw, th).data,
+    resized: tw !== w || th !== h,
+    cappedBySize,
+    origW: w,
+    origH: h,
+  };
+}
+
+async function uploadAssetFiles(files) {
+  const anim = sanitizeAnimName($('assetTargetAnim').value);
+  if (!anim) {
+    toast('Enter the animation the asset belongs to.', 'error');
+    return;
+  }
+  $('assetTargetAnim').value = anim;
+  let last = '';
+  for (const file of files) {
+    try {
+      const img = await imageFileToRgba(file, $('assetFitMatrix').checked);
+      const name = sanitizeFileName(file.name);
+      await uploadAssetBytes(anim, name, encodeBmp32(img.w, img.h, img.rgba));
+      last = `${anim}/${name}`;
+      if (img.cappedBySize) {
+        toast(`Uploaded ${name}, shrunk from ${img.origW}×${img.origH} to ${img.w}×${img.h} — the sign can't hold an asset that large.`);
+      } else {
+        toast(img.resized ? `Uploaded ${name} (shrunk from ${img.origW}×${img.origH} to ${img.w}×${img.h})` : `Uploaded ${name}`);
+      }
+    } catch (error) {
+      fail(new Error(`${file.name}: ${error.message}`));
+    }
+  }
+  await refreshFiles();
+  if (last) selectAsset(last, false);
+}
+
+// =====================================================================
+// Asset editor
+// =====================================================================
+
+const assetEditor = { w: 16, h: 16, px: new Uint8ClampedArray(16 * 16 * 4), erase: false, painting: false, cell: 12 };
+
+function syncAssetEditorLimits() {
+  const max = Math.max(128, state.width, state.height);
+  $('aeWidth').max = String(max);
+  $('aeHeight').max = String(max);
+}
+
+function resizeAssetEditor(w, h) {
+  const nw = clamp(Math.round(num(w, 16)), 1, 256);
+  const nh = clamp(Math.round(num(h, 16)), 1, 256);
+  const next = new Uint8ClampedArray(nw * nh * 4);
+  for (let y = 0; y < Math.min(nh, assetEditor.h); y += 1) {
+    for (let x = 0; x < Math.min(nw, assetEditor.w); x += 1) {
+      const s = (y * assetEditor.w + x) * 4;
+      next.set(assetEditor.px.subarray(s, s + 4), (y * nw + x) * 4);
+    }
+  }
+  assetEditor.w = nw;
+  assetEditor.h = nh;
+  assetEditor.px = next;
+  $('aeWidth').value = String(nw);
+  $('aeHeight').value = String(nh);
+  renderAssetEditor();
+}
+
+function renderAssetEditor() {
+  const cv = $('assetEditorCanvas');
+  const { w, h } = assetEditor;
+  const cell = clamp(Math.floor(480 / Math.max(w, h)), 4, 24);
+  assetEditor.cell = cell;
+  cv.width = w * cell;
+  cv.height = h * cell;
+  cv.style.width = `${w * cell}px`;
+  const c = cv.getContext('2d');
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      c.fillStyle = (x + y) & 1 ? '#0d1a2a' : '#13233a';
+      c.fillRect(x * cell, y * cell, cell, cell);
+      const i = (y * w + x) * 4;
+      const a = assetEditor.px[i + 3];
+      if (a) {
+        c.fillStyle = `rgba(${assetEditor.px[i]}, ${assetEditor.px[i + 1]}, ${assetEditor.px[i + 2]}, ${(a / 255).toFixed(3)})`;
+        c.fillRect(x * cell, y * cell, cell, cell);
+      }
+    }
+  }
+  c.strokeStyle = 'rgba(255,255,255,0.07)';
+  c.beginPath();
+  for (let x = 0; x <= w; x += 1) { c.moveTo(x * cell + 0.5, 0); c.lineTo(x * cell + 0.5, h * cell); }
+  for (let y = 0; y <= h; y += 1) { c.moveTo(0, y * cell + 0.5); c.lineTo(w * cell, y * cell + 0.5); }
+  c.stroke();
+}
+
+function assetCellAt(event) {
+  const rect = $('assetEditorCanvas').getBoundingClientRect();
+  return {
+    x: clamp(Math.floor(((event.clientX - rect.left) / rect.width) * assetEditor.w), 0, assetEditor.w - 1),
+    y: clamp(Math.floor(((event.clientY - rect.top) / rect.height) * assetEditor.h), 0, assetEditor.h - 1),
+  };
+}
+
+function paintAssetCell(x, y) {
+  const i = (y * assetEditor.w + x) * 4;
+  if (assetEditor.erase) {
+    assetEditor.px.fill(0, i, i + 4);
+    return;
+  }
+  const c = parseHex(state.color.a) || WHITE;
+  assetEditor.px[i] = c.r;
+  assetEditor.px[i + 1] = c.g;
+  assetEditor.px[i + 2] = c.b;
+  assetEditor.px[i + 3] = state.color.alpha;
+}
+
+// Fill every cell between the previous and current pointer position so fast
+// strokes don't leave gaps.
+function paintAssetAt(event) {
+  const to = assetCellAt(event);
+  const from = assetEditor.last || to;
+  let { x, y } = from;
+  const dx = Math.abs(to.x - x);
+  const dy = -Math.abs(to.y - y);
+  const sx = x < to.x ? 1 : -1;
+  const sy = y < to.y ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    paintAssetCell(x, y);
+    if (x === to.x && y === to.y) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+  }
+  assetEditor.last = to;
+  renderAssetEditor();
+}
+
+function setAssetBrush(erase) {
+  assetEditor.erase = erase;
+  $('aePen').classList.toggle('active', !erase);
+  $('aeErase').classList.toggle('active', erase);
+}
+
+function openAssetEditor(ref) {
+  setAssetBrush(false);
+  const defaultAnim = sanitizeAnimName($('assetTargetAnim').value) || sanitizeAnimName($('animNameInput').value) || 'demo_anim';
+  if (!ref) {
+    assetEditor.w = 16;
+    assetEditor.h = 16;
+    assetEditor.px = new Uint8ClampedArray(16 * 16 * 4);
+    $('aeWidth').value = '16';
+    $('aeHeight').value = '16';
+    $('aeAnim').value = defaultAnim;
+    $('assetNameInput').value = 'custom_asset';
+    $('assetEditorTitle').textContent = 'New asset';
+    renderAssetEditor();
+    openModal('assetEditorModal');
+    return;
+  }
+  const { anim, file } = splitAssetRef(ref);
+  ensureAsset(ref).then((asset) => {
+    assetEditor.w = asset.w;
+    assetEditor.h = asset.h;
+    assetEditor.px = new Uint8ClampedArray(asset.rgba);
+    $('aeWidth').value = String(asset.w);
+    $('aeHeight').value = String(asset.h);
+    $('aeAnim').value = anim;
+    $('assetNameInput').value = file.replace(/\.bmp$/i, '');
+    $('assetEditorTitle').textContent = `Edit ${file}`;
+    renderAssetEditor();
+    openModal('assetEditorModal');
+  }).catch(fail);
+}
+
+function saveAssetFromEditor() {
+  const anim = sanitizeAnimName($('aeAnim').value);
+  if (!anim) {
+    toast('Enter the animation this asset belongs to.', 'error');
+    return;
+  }
+  const file = sanitizeFileName($('assetNameInput').value, 'custom_asset');
+  uploadAssetBytes(anim, file, encodeBmp32(assetEditor.w, assetEditor.h, assetEditor.px))
+    .then(() => {
+      toast(`Saved ${anim}/${file}`);
+      closeModal('assetEditorModal');
+      return refreshFiles();
+    })
+    .then(() => selectAsset(`${anim}/${file}`, false))
+    .catch(fail);
+}
+
+function initAssetEditor() {
+  const cv = $('assetEditorCanvas');
+  cv.addEventListener('pointerdown', (event) => {
+    assetEditor.painting = true;
+    assetEditor.last = null;
+    cv.setPointerCapture?.(event.pointerId);
+    paintAssetAt(event);
+  });
+  cv.addEventListener('pointermove', (event) => { if (assetEditor.painting) paintAssetAt(event); });
+  const stop = () => { assetEditor.painting = false; assetEditor.last = null; };
+  cv.addEventListener('pointerup', stop);
+  cv.addEventListener('pointercancel', stop);
+  $('aePen').addEventListener('click', () => setAssetBrush(false));
+  $('aeErase').addEventListener('click', () => setAssetBrush(true));
+  $('aeClear').addEventListener('click', () => { assetEditor.px.fill(0); renderAssetEditor(); });
+  $('aeWidth').addEventListener('change', () => resizeAssetEditor($('aeWidth').value, assetEditor.h));
+  $('aeHeight').addEventListener('change', () => resizeAssetEditor(assetEditor.w, $('aeHeight').value));
+  $('saveAssetButton').addEventListener('click', saveAssetFromEditor);
+  syncAssetEditorLimits();
+  renderAssetEditor();
+}
+
+// =====================================================================
+// Animations: metadata, parameters, player
+// =====================================================================
+
+function fetchAnimDoc(id) {
+  return apiGet(`/file/download?path=${encodeURIComponent(`/anim/${id}/anim.json`)}`)
+    .then((doc) => {
+      if (state.noDocAnims.delete(id)) renderFileList(state.deviceInfo.fs);
+      return doc;
+    })
+    .catch((error) => {
+      // /file/ls lists every folder under /anim/, including ones that only
+      // hold assets, so a 404 here is expected rather than a fault.
+      if (/HTTP 404/.test(error.message) && !state.noDocAnims.has(id)) {
+        state.noDocAnims.add(id);
+        renderFileList(state.deviceInfo.fs);
+        renderAnimSelectors();
+      }
+      throw error;
+    });
+}
+
+// Walk every drawable in an anim.json, in either frame format.
+function forEachDrawable(doc, fn) {
+  (Array.isArray(doc?.frames) ? doc.frames : []).forEach((frame, fi) => {
+    if (!frame || typeof frame !== 'object') return;
+    if (Array.isArray(frame.drawables)) {
+      frame.drawables.forEach((item) => {
+        const key = item && typeof item === 'object' ? Object.keys(item)[0] : null;
+        if (key) fn(key, item[key], fi);
+      });
+      return;
+    }
+    Object.entries(frame).forEach(([key, value]) => {
+      if (!DRAWABLE_KEYS.includes(key)) return;
+      (Array.isArray(value) ? value : [value]).forEach((obj) => fn(key, obj, fi));
+    });
+  });
+}
+
+function loadAnimMeta(id) {
+  if (state.noDocAnims.has(id)) {
+    return Promise.reject(new Error(`${id} has no anim.json yet`));
+  }
+  if (!state.animMeta.has(id)) {
+    const promise = fetchAnimDoc(id).then((doc) => {
+      const params = doc && typeof doc.default_params === 'object' && doc.default_params ? { ...doc.default_params } : {};
+      const placeholders = new Set(Object.keys(params));
+      forEachDrawable(doc, (key, obj) => {
+        if ((key === 'text' || key === 'scrolling_text') && obj && typeof obj.text === 'string') {
+          for (const m of obj.text.matchAll(/\{([^{}]+)\}/g)) placeholders.add(m[1]);
+        }
+      });
+      return { doc, params, placeholders: [...placeholders] };
+    });
+    promise.catch(() => state.animMeta.delete(id));
+    state.animMeta.set(id, promise);
+  }
+  return state.animMeta.get(id);
+}
+
+function loadParamsForSelected() {
+  const id = $('animationSelector').value;
+  const block = $('paramsBlock');
+  const list = $('paramsList');
+  if (!id) {
+    block.hidden = true;
+    return;
+  }
+  loadAnimMeta(id).then((meta) => {
+    if ($('animationSelector').value !== id) return;
+    if (!meta.placeholders.length) {
+      block.hidden = true;
+      list.innerHTML = '';
+      return;
+    }
+    list.innerHTML = meta.placeholders.map((key) => {
+      const def = meta.params[key];
+      return `<label class="param-row"><code title="{${esc(key)}}">{${esc(key)}}</code><input type="text" data-param="${esc(key)}" data-default="${esc(def ?? '')}" data-has-default="${def !== undefined}" value="${esc(def ?? '')}" placeholder="${def === undefined ? 'no default — shown literally' : ''}" /></label>`;
+    }).join('');
+    block.hidden = false;
+  }).catch(() => { block.hidden = true; });
+}
+
+function collectParams() {
+  const params = {};
+  $('paramsList').querySelectorAll('[data-param]').forEach((input) => {
+    const hasDefault = input.dataset.hasDefault === 'true';
+    if (input.value !== '' || hasDefault) {
+      if (!hasDefault || input.value !== input.dataset.default) params[input.dataset.param] = input.value;
+    }
+  });
+  return params;
+}
+
+function startAnimation(name, cycles, params) {
+  if (!name) {
+    toast('Choose an animation first.', 'error');
+    return Promise.resolve();
+  }
+  const body = { animname: name, cycles: Math.max(0, Math.round(num(cycles, 0))) };
+  if (params && Object.keys(params).length) body.params = params;
+  return apiPost('/anim/start', body)
+    .catch((error) => {
+      if (/HTTP 404/.test(error.message)) {
+        state.noDocAnims.add(name);
+        renderFileList(state.deviceInfo.fs);
+        throw new Error(`"${name}" has no anim.json on the sign yet — save an animation under that name first.`);
+      }
+      throw error;
+    })
+    .then(() => {
+      toast(`Playing ${name}${body.cycles ? ` × ${body.cycles}` : ''}`);
+      refreshStatus();
+      refreshComposition();
+    })
+    .catch(fail);
+}
+
+function stopAnimation() {
+  apiPost('/anim/stop')
+    .then(() => {
+      toast('Stopped');
+      refreshStatus();
+      refreshComposition();
+    })
+    .catch(fail);
+}
+
+let speedTouchedAt = 0;
+const sendSpeed = debounce((value) => {
+  apiPost('/anim/setspeed', { speed: value }).catch(fail);
+}, 150);
+
+function refreshStatus() {
+  return apiGet('/anim/status').then((s) => {
+    const prevKey = `${state.status.running}|${state.status.animname}`;
+    state.status = {
+      running: Boolean(s && s.running),
+      paused: Boolean(s && s.paused),
+      speed: num(s && s.speed, 1),
+      animname: String((s && s.animname) || ''),
+    };
+    renderStatus();
+    if (prevKey !== `${state.status.running}|${state.status.animname}`) renderFileList(state.deviceInfo.fs);
+  }).catch(() => {});
+}
+
+function renderStatus() {
+  const { running, paused, speed, animname } = state.status;
+  const id = animIdFromStatus(animname);
+  const badge = $('statusBadge');
+  badge.textContent = running ? `${paused ? 'Paused' : 'Playing'}${id ? ` · ${id}` : ''}` : 'Idle';
+  badge.classList.toggle('running', running);
+  const info = $('playingInfo');
+  info.textContent = running ? `${paused ? 'Paused' : 'Playing'} ${id || 'animation'}${speed !== 1 ? ` at ${speed.toFixed(1)}×` : ''}` : 'Nothing playing';
+  info.classList.toggle('running', running);
+  if (Date.now() - speedTouchedAt > 3000) {
+    $('speedRange').value = String(speed);
+    $('speedValue').textContent = `${speed.toFixed(1)}×`;
+  }
+}
+
+// =====================================================================
+// Animation builder (timeline)
+// =====================================================================
+
+function cloneObjects(objects) {
+  return objects.map((o) => ({ key: o.key, fields: JSON.parse(JSON.stringify(o.fields)) }));
+}
+
+function captureFrame(replaceIndex) {
+  const objects = orderedTrackedObjects();
+  const skipped = untrackedOverlayCount();
+  if (!objects.length) {
+    toast(skipped
+      ? "The overlay's objects were drawn outside this page, so their values aren't known. Redraw them here to capture them."
+      : 'Draw something on the overlay first, then capture it.', 'error');
+    return;
+  }
+  const duration = Math.max(0, Math.round(num($('captureDuration').value, 1000)));
+  if (typeof replaceIndex === 'number') {
+    state.timeline[replaceIndex].objects = cloneObjects(objects);
+  } else {
+    state.timeline.push({ kind: 'frame', objects: cloneObjects(objects), duration });
+  }
+  renderTimeline();
+  const which = typeof replaceIndex === 'number' ? `Updated step ${replaceIndex + 1}` : `Captured frame as step ${state.timeline.length}`;
+  toast(skipped ? `${which}. ${skipped} object${skipped === 1 ? '' : 's'} drawn outside this page ${skipped === 1 ? 'was' : 'were'} skipped.` : which);
+}
+
+function addAnimStep() {
+  const name = $('stepAnimSelect').value;
+  if (!name) {
+    toast('There are no animations on the sign to add yet.', 'error');
+    return;
+  }
+  state.timeline.push({
+    kind: 'anim',
+    name,
+    cycles: Math.max(1, Math.round(num($('stepCycles').value, 1))),
+    speed: Math.max(0.1, num($('stepSpeed').value, 1)),
+  });
+  renderTimeline();
+}
+
+function renderTimeline() {
+  const list = $('timelineList');
+  $('timelineCount').textContent = String(state.timeline.length);
+  list.innerHTML = state.timeline.map((step, i) => {
+    const body = step.kind === 'frame'
+      ? `<div class="step-title">Frame — ${step.objects.length} object${step.objects.length === 1 ? '' : 's'}</div>
+         <div class="step-sub"><input type="number" min="0" step="100" value="${step.duration}" data-duration="${i}" aria-label="Frame length in ms" /> ms</div>
+         <div class="step-sub"><button type="button" data-act="show" data-i="${i}" title="Put this frame on the overlay to change it">Show</button>
+           <button type="button" data-act="replace" data-i="${i}" title="Replace with what's on the overlay now">Replace</button></div>`
+      : `<div class="step-title">Play ${esc(step.name)}</div>
+         <div class="step-sub">${step.cycles}× at ${Number(step.speed).toFixed(1)}× speed</div>`;
+    return `<li class="timeline-step">
+      <div class="step-thumb">${step.kind === 'frame' ? '<canvas></canvas>' : '▶'}</div>
+      <div class="step-body">${body}</div>
+      <div class="step-actions">
+        <button type="button" data-act="up" data-i="${i}" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button type="button" data-act="down" data-i="${i}" title="Move down" ${i === state.timeline.length - 1 ? 'disabled' : ''}>↓</button>
+        <button type="button" data-act="remove" data-i="${i}" title="Remove step">✕</button>
+      </div>
+    </li>`;
+  }).join('');
+
+  list.querySelectorAll('.timeline-step').forEach((li, i) => {
+    const step = state.timeline[i];
+    if (step.kind !== 'frame') return;
+    const raster = new Raster(state.width, state.height);
+    step.objects.forEach((o) => rasterizeObject(raster, o.key, o.fields));
+    raster.toCanvas(li.querySelector('canvas'));
+  });
+  list.querySelectorAll('[data-duration]').forEach((input) => {
+    input.addEventListener('change', () => {
+      state.timeline[Number(input.dataset.duration)].duration = Math.max(0, Math.round(num(input.value, 0)));
+    });
+  });
+  list.querySelectorAll('button[data-act]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const i = Number(button.dataset.i);
+      const t = state.timeline;
+      switch (button.dataset.act) {
+        case 'up': [t[i - 1], t[i]] = [t[i], t[i - 1]]; break;
+        case 'down': [t[i + 1], t[i]] = [t[i], t[i + 1]]; break;
+        case 'remove': t.splice(i, 1); break;
+        case 'replace': captureFrame(i); return;
+        case 'show':
+          runAction(replaceOverlayAction(t[i].objects))
+            .then(() => toast(`Step ${i + 1} is on the overlay — change it, then Replace to update the step.`))
+            .catch(fail);
+          return;
+        default: return;
+      }
+      renderTimeline();
+    });
+  });
+}
+
+// Captured frames use the `drawables` array form (the same one
+// /framebuffer/savetostorage writes) so objects keep their stacking order. A
+// separate `clear` frame in front blanks the screen — the firmware ignores
+// clear/load_anim inside a `drawables` frame.
+function buildTimelineAnim() {
+  const blank = $('blankEachFrame').checked;
+  const frames = [];
+  state.timeline.forEach((step) => {
+    if (step.kind === 'frame') {
+      if (blank) frames.push({ clear: {} });
+      frames.push({ drawables: step.objects.map((o) => ({ [o.key]: o.fields })), duration: step.duration });
+    } else {
+      frames.push({ load_anim: { name: step.name, cycles: step.cycles, speed: step.speed } });
+    }
+  });
+  return { default_params: {}, frames };
+}
+
+function confirmReplace(name, exceptId) {
+  if (name === exceptId || !animIds().includes(name)) return true;
+  if (state.noDocAnims.has(name)) return true; // assets only, no document yet
+  return window.confirm(`An animation called "${name}" is already on the sign. Replace it?`);
+}
+
+function uploadAnimation(name, doc) {
+  return apiPost('/file/uploadanim', { animname: name, anim: doc })
+    .then(() => {
+      state.animMeta.delete(name);
+      state.noDocAnims.delete(name); // it definitely has a document now
+      return refreshFiles();
+    })
+    .then(() => {
+      $('animationSelector').value = name;
+      loadParamsForSelected();
+    });
+}
+
+function uploadTimeline() {
+  if (!state.timeline.length) {
+    toast('Add at least one step first.', 'error');
+    return;
+  }
+  const name = sanitizeAnimName($('timelineName').value);
+  if (!name) {
+    toast('Give the animation a name.', 'error');
+    return;
+  }
+  $('timelineName').value = name;
+  if (!confirmReplace(name)) return;
+  uploadAnimation(name, buildTimelineAnim())
+    .then(() => toast(`Saved ${name} — pick it under Play to run it.`))
+    .catch(fail);
+}
+
+// "Save overlay": the firmware serialises the overlay into a one-frame
+// /anim/<name>/anim.json.
+function saveOverlayAsAnimation() {
+  const name = sanitizeAnimName($('animNameInput').value);
+  if (!name) {
+    toast('Give the animation a name.', 'error');
+    return;
+  }
+  $('animNameInput').value = name;
+  if (!state.overlayLayers.length) {
+    toast('The overlay is empty — draw something first.', 'error');
+    return;
+  }
+  apiGet('/file/ls')
+    .then((files) => {
+      state.anims = (files?.anims || []).map((a) => ({ id: String(a.id), assets: a.assets || [] }));
+      if (!confirmReplace(name)) return null;
+      return apiPost('/framebuffer/savetostorage', { animname: name, filename: 'anim.json' })
+        .then(() => {
+          state.animMeta.delete(name);
+          state.noDocAnims.delete(name);
+          toast(`Saved the overlay as ${name}`);
+        });
+    })
+    .then(() => refreshFiles())
+    .catch(fail);
+}
+
+// =====================================================================
+// Animation JSON editor + validation (mirrors tools/validate_anim.py)
+// =====================================================================
+
+const jsonEditor = { editingId: null };
+
+const ANIM_TEMPLATE = {
+  default_params: { greeting: 'hello' },
+  frames: [
+    { clear: {} },
+    { text: { x: 0, y: 0, text: '{greeting}', font: '5x7', color: '#ffb000', objname: 'greeting' }, duration: 2000 },
+    { clear: { obj: ['greeting'] } },
+    {
+      scrolling_text: {
+        x: 0, y: 0, dx: 32, dy: 7, text: 'Scrolling…', font: '5x7',
+        color: 'linear-gradient(90deg, #4a90e2, #a0d0ff)', scroll_speed: 12, scroll_direction: 'horizontal',
+      },
+      duration: 4000,
+    },
+  ],
+};
+
+function openJsonEditor({ name = '', doc = ANIM_TEMPLATE, editingId = null } = {}) {
+  jsonEditor.editingId = editingId;
+  $('jsonEditorTitle').textContent = editingId ? `Edit ${editingId}` : 'New animation';
+  $('jsonAnimName').value = name;
+  $('jsonEditorText').value = JSON.stringify(doc, null, 2);
+  $('jsonProblems').innerHTML = '';
+  openModal('jsonEditorModal');
+}
+
+function openJsonEditorFor(id) {
+  fetchAnimDoc(id)
+    .then((doc) => openJsonEditor({ name: id, doc, editingId: id }))
+    .catch(fail);
+}
+
+function validateAnim(doc, animName) {
+  const errors = [];
+  const warns = [];
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return { errors: ['The top level must be an object with a "frames" list.'], warns };
+
+  if (doc.default_params !== undefined) {
+    if (!doc.default_params || typeof doc.default_params !== 'object' || Array.isArray(doc.default_params)) errors.push('default_params must be an object.');
+    else Object.entries(doc.default_params).forEach(([k, v]) => { if (!['string', 'number'].includes(typeof v)) warns.push(`default_params.${k} should be a string.`); });
+  }
+  if (!Array.isArray(doc.frames)) {
+    errors.push('"frames" must be a list.');
+    return { errors, warns };
+  }
+  if (!doc.frames.length) warns.push('"frames" is empty — nothing will show.');
+
+  const known = new Set([...DRAWABLE_KEYS, 'clear', 'load_anim', 'duration', 'drawables']);
+  const assetExists = (name) => {
+    const ref = name.includes('/') ? name : `${animName}/${name}`;
+    const { anim, file } = splitAssetRef(ref);
+    const entry = state.anims.find((a) => a.id === anim);
+    return entry ? entry.assets.includes(file) : null;
+  };
+
+  doc.frames.forEach((frame, i) => {
+    const where = `frame ${i + 1}`;
+    if (!frame || typeof frame !== 'object' || Array.isArray(frame)) {
+      errors.push(`${where} must be an object.`);
+      return;
+    }
+    Object.keys(frame).forEach((k) => { if (!known.has(k)) warns.push(`${where}: unknown key "${k}" (ignored by the sign).`); });
+
+    const drawables = [];
+    if (Array.isArray(frame.drawables)) {
+      if (frame.clear !== undefined || frame.load_anim !== undefined) warns.push(`${where}: in a frame with "drawables", clear and load_anim are ignored — put them in their own frame.`);
+      DRAWABLE_KEYS.forEach((k) => { if (frame[k] !== undefined) warns.push(`${where}: "${k}" next to "drawables" is ignored.`); });
+      frame.drawables.forEach((item, j) => {
+        const key = item && typeof item === 'object' ? Object.keys(item)[0] : null;
+        if (!DRAWABLE_KEYS.includes(key)) errors.push(`${where}.drawables[${j}]: expected one of ${DRAWABLE_KEYS.join(', ')}.`);
+        else drawables.push([key, item[key]]);
+      });
+    } else if (frame.drawables !== undefined) {
+      errors.push(`${where}: "drawables" must be a list.`);
+    } else {
+      DRAWABLE_KEYS.forEach((key) => {
+        if (frame[key] === undefined) return;
+        (Array.isArray(frame[key]) ? frame[key] : [frame[key]]).forEach((obj) => drawables.push([key, obj]));
+      });
+    }
+
+    const controlOnly = (frame.clear !== undefined || frame.load_anim !== undefined) && !drawables.length;
+    if (frame.duration !== undefined && typeof frame.duration !== 'number') errors.push(`${where}: duration must be a number (milliseconds).`);
+    else if (frame.duration === undefined && !controlOnly && drawables.length) warns.push(`${where}: no duration — it flashes by in 0 ms.`);
+
+    drawables.forEach(([key, obj]) => {
+      const w = `${where}.${key}`;
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+        errors.push(`${w} must be an object.`);
+        return;
+      }
+      if (obj.color !== undefined && !isValidColorSpec(obj.color)) warns.push(`${w}: color "${obj.color}" isn't #rgb/#rrggbb/#rrggbbaa or linear-gradient(…) — it will show white.`);
+      if ((key === 'text' || key === 'scrolling_text') && obj.text === undefined) warns.push(`${w}: no "text" — renders empty.`);
+      if (obj.font !== undefined && !FONTS[obj.font] && obj.font !== '12x16') warns.push(`${w}: unknown font "${obj.font}" — falls back to 5x7.`);
+      if (key === 'scrolling_text') {
+        if (obj.scroll_direction !== undefined && !['horizontal', 'vertical'].includes(obj.scroll_direction)) warns.push(`${w}: scroll_direction "${obj.scroll_direction}" is treated as horizontal.`);
+        if (!num(obj.dx, 0) || !num(obj.dy, 0)) warns.push(`${w}: dx/dy set the scroll window; with 0 nothing is visible.`);
+      }
+      if (key === 'rectangle' && (num(obj.dx, 0) <= 0 || num(obj.dy, 0) <= 0)) warns.push(`${w}: dx and dy are width and height — 0 draws nothing.`);
+      if (key === 'asset') {
+        if (!obj.name) errors.push(`${w}: missing "name".`);
+        else if (animName && assetExists(String(obj.name)) === false) warns.push(`${w}: asset "${obj.name}" isn't on the sign — a purple/black marker shows instead.`);
+      }
+    });
+
+    if (frame.load_anim !== undefined) {
+      const lo = frame.load_anim;
+      if (!lo || typeof lo !== 'object' || !lo.name) errors.push(`${where}.load_anim: missing "name".`);
+      else {
+        if (!animIds().includes(lo.name)) warns.push(`${where}.load_anim: "${lo.name}" isn't on the sign.`);
+        if (lo.name === animName) warns.push(`${where}.load_anim: plays itself — the sign stops after 8 levels.`);
+        if (lo.speed !== undefined && !(num(lo.speed, 0) > 0)) warns.push(`${where}.load_anim: speed should be above 0 (falls back to 1).`);
+      }
+    }
+    if (frame.clear !== undefined) {
+      const co = frame.clear;
+      if (co && typeof co === 'object' && co.obj !== undefined && !Array.isArray(co.obj)) errors.push(`${where}.clear.obj must be a list of objnames or "f<frame>:<index>" handles.`);
+    }
+  });
+  return { errors, warns };
+}
+
+function showProblems({ errors, warns }, okMessage) {
+  const items = [
+    ...errors.map((e) => `<li class="error">${esc(e)}</li>`),
+    ...warns.map((w) => `<li class="warn">${esc(w)}</li>`),
+  ];
+  if (!items.length && okMessage) items.push(`<li class="ok">${esc(okMessage)}</li>`);
+  $('jsonProblems').innerHTML = items.join('');
+}
+
+function readJsonEditor() {
+  try {
+    return { doc: JSON.parse($('jsonEditorText').value) };
+  } catch (e) {
+    return { error: `Not valid JSON: ${e.message}` };
+  }
+}
+
+function checkJsonEditor() {
+  const { doc, error } = readJsonEditor();
+  if (error) {
+    showProblems({ errors: [error], warns: [] });
+    return null;
+  }
+  const result = validateAnim(doc, sanitizeAnimName($('jsonAnimName').value));
+  showProblems(result, 'Looks good.');
+  return { doc, result };
+}
+
+function uploadJsonEditor() {
+  const checked = checkJsonEditor();
+  if (!checked) return;
+  if (checked.result.errors.length) {
+    toast('Fix the errors listed below the editor first.', 'error');
+    return;
+  }
+  const name = sanitizeAnimName($('jsonAnimName').value);
+  if (!name) {
+    toast('Give the animation a name.', 'error');
+    return;
+  }
+  $('jsonAnimName').value = name;
+  if (!confirmReplace(name, jsonEditor.editingId)) return;
+  uploadAnimation(name, checked.doc)
+    .then(() => {
+      toast(`Saved ${name}`);
+      jsonEditor.editingId = name;
+      $('jsonEditorTitle').textContent = `Edit ${name}`;
+    })
+    .catch(fail);
+}
+
+// =====================================================================
+// Settings + device info
+// =====================================================================
+
+const sendBrightness = debounce((value) => {
+  apiPost('/display/brightness', { brightness: value }).catch(fail);
+}, 150);
+
+function loadDeviceSettings() {
+  apiGet('/display/brightness').then((b) => {
+    const value = clamp(num(b && b.brightness, 128), 0, 255);
+    $('brightnessRange').value = String(value);
+    $('brightnessValue').textContent = String(value);
+  }).catch(() => {});
+  apiGet('/display/gpiopins').then((pins) => {
+    state.deviceInfo.pins = pins;
+    renderDeviceInfo();
+  }).catch(() => {});
+  apiGet('/file/fsstatus').then((fs) => {
+    state.deviceInfo.fs = fs;
+    renderDeviceInfo();
+  }).catch(() => {});
+}
+
+function renderDeviceInfo() {
+  const { pins, fs } = state.deviceInfo;
+  const rows = [['Address', esc(describeTarget())]];
+  if (state.sizeKnown) rows.push(['Matrix', `${state.width} × ${state.height} LEDs`]);
+  if (pins) {
+    rows.push(['LED data pin', `GPIO ${esc(pins.data_pin)}`]);
+    if (pins.sd) rows.push(['SD card pins', `CS ${esc(pins.sd.cs)}, MOSI ${esc(pins.sd.mosi)}, MISO ${esc(pins.sd.miso)}, SCK ${esc(pins.sd.sck)}`]);
+  }
+  if (fs && fs.fs) rows.push(['Storage', `${esc({ sd: 'SD card', littlefs: 'Internal flash' }[fs.fs] || fs.fs)}, ${formatBytes(fs.free)} free of ${formatBytes(fs.total)}`]);
+  $('deviceInfo').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+function connect() {
+  api.base = $('apiBase').value.trim();
+  state.conn = { ok: null, failures: 0 };
+  setConnState(null);
+  assetCache.clear();
+  state.animMeta.clear();
+  apiGet('/framebuffer/size').then((s) => setMatrixSize(s.width, s.height)).catch(() => {});
+  loadLiveView();
+  refreshFiles();
+  refreshComposition();
+  refreshStatus();
+  loadDeviceSettings();
+}
+
+// =====================================================================
+// Modals, tabs, tools, color UI
+// =====================================================================
+
+function openModal(id) {
+  const modal = $(id);
+  modal.classList.remove('hidden');
+  modal.setAttribute('aria-hidden', 'false');
+  const focusable = modal.querySelector('input, select, textarea, button:not([data-close-modal])');
+  if (focusable) setTimeout(() => focusable.focus(), 0);
+}
+
+function closeModal(id) {
+  const modal = $(id);
+  modal.classList.add('hidden');
+  modal.setAttribute('aria-hidden', 'true');
+  if (id === 'objectEditModal' && state.editingLayer) {
+    state.editingLayer = null;
+    state.highlight = null;
+    renderOverlay();
+  }
+}
+
+function openModalIds() {
+  return [...document.querySelectorAll('.modal:not(.hidden)')].map((m) => m.id);
+}
+
+function switchTab(target) {
+  document.querySelectorAll('.tab-btn').forEach((b) => {
+    const active = b.dataset.tab === target;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', String(active));
+  });
+  document.querySelectorAll('.tab-panel').forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.tabPanel === target);
+  });
+  if (target === 'composition') refreshComposition();
+  if (target === 'anim') renderTimeline();
+}
+
+function setTool(tool) {
+  state.activeTool = tool;
+  document.querySelectorAll('.tool').forEach((button) => button.classList.toggle('active', button.dataset.tool === tool));
+  canvas.classList.toggle('pan-mode', tool === 'move');
+  const settings = {
+    select: 'selectSettings', text: 'textSettings', scroll: 'scrollSettings',
+    line: 'lineSettings', rectangle: 'rectSettings', asset: 'assetSettings',
+    move: 'moveSettings',
+  };
+  Object.entries(settings).forEach(([name, id]) => { $(id).hidden = name !== tool; });
+  if (tool === 'asset' && state.selectedAsset) ensureAsset(state.selectedAsset).then(() => renderOverlay()).catch(() => {});
+  if (tool === 'select') {
+    // Asset bounds need the bitmap's size, so make sure they're loaded.
+    orderedTrackedObjects().forEach((o) => {
+      if (o.key === 'asset' && o.fields.name && !assetCache.has(o.fields.name)) {
+        ensureAsset(o.fields.name).then(() => { renderOverlay(); renderSelectionPanel(); }).catch(() => {});
+      }
+    });
+    renderSelectionPanel();
+  } else {
+    canvas.classList.remove('over-object');
+    state.hoverObject = null;
+  }
+  renderOverlay();
+}
+
+function buildColorSwatches() {
+  const wrap = $('colorPalette');
+  wrap.innerHTML = '';
+  PALETTE.forEach((color) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'swatch';
+    button.style.background = color;
+    button.title = color;
+    button.dataset.color = color;
+    button.addEventListener('click', () => {
+      state.color.a = color;
+      $('customColor').value = color;
+      updateColorUi();
+    });
+    wrap.appendChild(button);
+  });
+}
+
+function buildFontSelects() {
+  document.querySelectorAll('.font-select').forEach((select) => { select.innerHTML = fontOptions('5x7'); });
+}
+
+function updateColorUi() {
+  const { mode, a, alpha } = state.color;
+  document.querySelectorAll('.swatch').forEach((s) => s.classList.toggle('selected', s.dataset.color === a));
+  $('fillSolidButton').classList.toggle('active', mode === 'solid');
+  $('fillGradientButton').classList.toggle('active', mode === 'gradient');
+  $('gradientSettings').hidden = mode !== 'gradient';
+  $('opacityValue').textContent = `${Math.round((alpha / 255) * 100)}%`;
+  $('colorPreview').style.setProperty('--swatch', cssForSpec(currentColorSpec()));
+  $('colorPreview').title = currentColorSpec();
+  renderOverlay();
+}
+
+// =====================================================================
+// Events
+// =====================================================================
+
+function isTyping(target) {
+  const tag = (target && target.tagName ? target.tagName : '').toLowerCase();
+  return tag === 'input' || tag === 'select' || tag === 'textarea' || (target && target.isContentEditable);
+}
+
+function bindEvents() {
+  $('toggleConfigButton').addEventListener('click', () => {
+    renderDeviceInfo();
+    openModal('settingsModal');
+    loadDeviceSettings();
+  });
+  $('connectButton').addEventListener('click', () => {
+    connect();
+    closeModal('settingsModal');
+  });
+  $('apiBase').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      connect();
+      closeModal('settingsModal');
+    }
+  });
+
+  document.querySelectorAll('.modal').forEach((modal) => {
+    modal.addEventListener('click', (event) => { if (event.target === modal) closeModal(modal.id); });
+    modal.querySelectorAll('[data-close-modal]').forEach((b) => b.addEventListener('click', () => closeModal(modal.id)));
+  });
+
+  // Color
+  $('customColor').addEventListener('input', (event) => { state.color.a = event.target.value; updateColorUi(); });
+  $('fillSolidButton').addEventListener('click', () => { state.color.mode = 'solid'; updateColorUi(); });
+  $('fillGradientButton').addEventListener('click', () => { state.color.mode = 'gradient'; updateColorUi(); });
+  $('gradientColor').addEventListener('input', (event) => { state.color.b = event.target.value; updateColorUi(); });
+  $('gradientAngle').addEventListener('input', (event) => { state.color.angle = num(event.target.value, 90); updateColorUi(); });
+  $('swapGradientButton').addEventListener('click', () => {
+    [state.color.a, state.color.b] = [state.color.b, state.color.a];
+    $('customColor').value = state.color.a;
+    $('gradientColor').value = state.color.b;
+    updateColorUi();
+  });
+  $('opacityRange').addEventListener('input', (event) => { state.color.alpha = num(event.target.value, 255); updateColorUi(); });
+
+  // Tool settings re-render the hover ghost
+  ['textInput', 'textFont', 'scrollTextInput', 'scrollFont', 'scrollDirection', 'assetTint'].forEach((id) => {
+    $(id).addEventListener('input', () => renderOverlay());
+    $(id).addEventListener('change', () => renderOverlay());
+  });
+
+  $('brightnessRange').addEventListener('input', (event) => {
+    const value = num(event.target.value, 128);
+    $('brightnessValue').textContent = String(value);
+    sendBrightness(value);
+  });
+
+  $('zoomRange').addEventListener('input', (event) => setZoom(num(event.target.value, 16), true));
+  $('fitZoomButton').addEventListener('click', () => {
+    state.userSetZoom = false;
+    autoFitZoom();
+  });
+
+  // Draw tab
+  $('saveFrameButton').addEventListener('click', saveOverlayAsAnimation);
+  $('clearAllButton').addEventListener('click', clearAllObjects);
+  $('undoButton').addEventListener('click', undo);
+  $('redoButton').addEventListener('click', redo);
+  $('sendRawFrameButton').addEventListener('click', sendRawFrame);
+  $('assetSelect').addEventListener('change', (event) => selectAsset(event.target.value, false));
+  $('openAssetEditorButton').addEventListener('click', () => openAssetEditor(null));
+  document.querySelectorAll('.tool').forEach((button) => button.addEventListener('click', () => setTool(button.dataset.tool)));
+
+  // Selection panel
+  const commitSelXY = () => {
+    const stored = selectedObject();
+    if (!stored) return;
+    moveSelectedTo(num($('selX').value, stored.fields.x), num($('selY').value, stored.fields.y), false);
+  };
+  ['selX', 'selY'].forEach((id) => {
+    $(id).addEventListener('change', commitSelXY);
+    // Enter commits and hands focus back, so the arrow keys nudge again
+    // instead of stepping the number field.
+    $(id).addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        commitSelXY();
+        event.target.blur();
+      }
+    });
+  });
+  $('selRemoveButton').addEventListener('click', removeSelection);
+  $('selDuplicateButton').addEventListener('click', duplicateSelection);
+  $('selEditButton').addEventListener('click', () => {
+    const layer = state.overlayLayers.find((l) => l.objname === state.selected);
+    if (layer) openObjectEditor(layer);
+  });
+
+  // Objects
+  $('applyObjectButton').addEventListener('click', applyObjectEdit);
+  $('removeObjectButton').addEventListener('click', removeObject);
+
+  // Assets
+  $('newAssetButton').addEventListener('click', () => openAssetEditor(null));
+  $('assetUpload').addEventListener('change', (event) => {
+    const files = [...event.target.files];
+    event.target.value = '';
+    if (files.length) uploadAssetFiles(files);
+  });
+
+  // Animate
+  $('animationSelector').addEventListener('change', loadParamsForSelected);
+  $('startAnimationButton').addEventListener('click', () => startAnimation($('animationSelector').value, $('cyclesInput').value, collectParams()));
+  $('stopAnimationButton').addEventListener('click', stopAnimation);
+  $('speedRange').addEventListener('input', (event) => {
+    speedTouchedAt = Date.now();
+    const value = num(event.target.value, 1);
+    $('speedValue').textContent = `${value.toFixed(1)}×`;
+    sendSpeed(value);
+  });
+  $('captureFrameButton').addEventListener('click', () => captureFrame());
+  $('addAnimStepButton').addEventListener('click', addAnimStep);
+  $('uploadTimelineButton').addEventListener('click', uploadTimeline);
+  $('editTimelineJsonButton').addEventListener('click', () => {
+    if (!state.timeline.length) {
+      toast('Add at least one step first.', 'error');
+      return;
+    }
+    openJsonEditor({ name: sanitizeAnimName($('timelineName').value), doc: buildTimelineAnim() });
+  });
+  $('clearTimelineButton').addEventListener('click', () => {
+    if (state.timeline.length && !window.confirm('Remove all steps?')) return;
+    state.timeline = [];
+    renderTimeline();
+  });
+
+  // Files
+  $('refreshFilesButton').addEventListener('click', () => {
+    assetCache.clear();
+    refreshFiles();
+    refreshComposition();
+  });
+  $('newAnimJsonButton').addEventListener('click', () => openJsonEditor({ name: '', doc: ANIM_TEMPLATE }));
+  $('jsonFormatButton').addEventListener('click', () => {
+    const { doc, error } = readJsonEditor();
+    if (error) showProblems({ errors: [error], warns: [] });
+    else $('jsonEditorText').value = JSON.stringify(doc, null, 2);
+  });
+  $('jsonCheckButton').addEventListener('click', checkJsonEditor);
+  $('jsonUploadButton').addEventListener('click', uploadJsonEditor);
+  $('jsonEditorText').addEventListener('keydown', (event) => {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      const el = event.target;
+      const s = el.selectionStart;
+      el.setRangeText('  ', s, el.selectionEnd, 'end');
+    }
+  });
+
+  // Canvas
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerCancel);
+  canvas.addEventListener('pointerleave', onPointerLeave);
+  $('canvasStage').addEventListener('wheel', (event) => {
+    if (!(event.ctrlKey || event.metaKey)) return;
+    event.preventDefault();
+    setZoom(state.zoom + (event.deltaY < 0 ? 2 : -2), true);
+  }, { passive: false });
+
+  // Keyboard
+  const TOOL_KEYS = { v: 'select', t: 'text', s: 'scroll', l: 'line', r: 'rectangle', a: 'asset', m: 'move' };
+  const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      const open = openModalIds();
+      if (open.length) {
+        closeModal(open[open.length - 1]);
+        return;
+      }
+      if (state.drag) onPointerCancel();
+      else if (state.selected) setSelection(null);
+      return;
+    }
+    if (isTyping(event.target) || openModalIds().length) return;
+    const key = event.key.toLowerCase();
+    if (event.ctrlKey || event.metaKey) {
+      if (key === 'z' && !event.shiftKey) { event.preventDefault(); undo(); }
+      else if ((key === 'z' && event.shiftKey) || key === 'y') { event.preventDefault(); redo(); }
+      return;
+    }
+
+    if (state.activeTool === 'select') {
+      if (ARROWS[event.key]) {
+        event.preventDefault();
+        const [dx, dy] = ARROWS[event.key];
+        const step = event.shiftKey ? 5 : 1;
+        nudgeSelection(dx * step, dy * step);
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        cycleSelection(event.shiftKey ? -1 : 1);
+        return;
+      }
+      if ((event.key === 'Delete' || event.key === 'Backspace') && state.selected) {
+        event.preventDefault();
+        removeSelection();
+        return;
+      }
+      if (event.key === 'Enter' && state.selected) {
+        event.preventDefault();
+        $('selEditButton').click();
+        return;
+      }
+    }
+
+    if (!event.altKey && TOOL_KEYS[key]) setTool(TOOL_KEYS[key]);
+  });
+
+  window.addEventListener('resize', debounce(() => {
+    autoFitZoom();
+    renderOverlay();
+  }, 120));
+
+  // Refresh right away when the tab comes back into view.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      loadLiveView();
+      refreshComposition();
+      refreshStatus();
+    }
+  });
+}
+
+function bindTabs() {
+  document.querySelectorAll('.tab-btn').forEach((button) => {
+    button.addEventListener('click', () => switchTab(button.dataset.tab));
+  });
+}
+
+// Each poller waits for its previous request, so a slow sign never gets a
+// pile-up of overlapping requests. Nothing is polled while the page is hidden.
+function startPolling() {
+  const loop = (fn, ms) => {
+    const tick = () => {
+      const run = document.hidden ? Promise.resolve() : Promise.resolve(fn()).catch(() => {});
+      run.finally(() => setTimeout(tick, ms));
+    };
+    setTimeout(tick, ms);
+  };
+  loop(loadLiveView, POLL_MS.frame);
+  loop(refreshComposition, POLL_MS.composition);
+  loop(refreshStatus, POLL_MS.status);
+}
+
+function init() {
+  $('apiBase').value = api.base;
+  buildColorSwatches();
+  buildFontSelects();
+  initAssetEditor();
+  bindEvents();
+  bindTabs();
+  setTool('text');
+  updateColorUi();
+  applyFrameGeometry();
+  autoFitZoom();
+  renderTimeline();
+  updateHistoryButtons();
+  connect();
+  startPolling();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+
 </script>
-</body>
+  </body>
 </html>

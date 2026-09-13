@@ -48,6 +48,35 @@ public:
         d.a = (uint8_t)(c.a > d.a ? c.a : d.a);
     }
 
+    // ——— clipping helpers ———
+    // The primitives iterate over the object's geometry, which comes straight
+    // from JSON. A rectangle of 2e9 x 2e9 used to loop for hours inside one
+    // render() call and trip the task watchdog, so every loop is clipped to
+    // the buffer first. The *extent* used for gradient sampling stays the
+    // object's full size, so clipping changes nothing about what is drawn —
+    // only how many pixels are visited.
+    struct Span { int lo, hi; }; // inclusive; empty when lo > hi
+
+    // Bounds that keep one render() short. A brush or a line much larger than
+    // the panel can only be a mistake or hostile input.
+    static const int kMaxBrush = 64;
+    static const int kMaxLineSteps = 8192;
+
+    Span clipX(long long from, long long to) const
+    {
+        long long lo = from < to ? from : to, hi = from < to ? to : from;
+        if (lo < 0) lo = 0;
+        if (hi > (long long)w - 1) hi = (long long)w - 1;
+        return {(int)lo, (int)hi};
+    }
+    Span clipY(long long from, long long to) const
+    {
+        long long lo = from < to ? from : to, hi = from < to ? to : from;
+        if (lo < 0) lo = 0;
+        if (hi > (long long)h - 1) hi = (long long)h - 1;
+        return {(int)lo, (int)hi};
+    }
+
     // ——— primitives ———
     void hline(int x0, int x1, int y, const Rgba &c)
     {
@@ -62,11 +91,30 @@ public:
 
     // Bresenham line with `thickness` (square brush), colored by a ColorSpec
     // sampled along its bounding box.
-    void line(int x0, int y0, int x1, int y1, int thickness, const ColorSpec &cs)
+    void line(long long lx0, long long ly0, long long lx1, long long ly1,
+              int thickness, const ColorSpec &cs)
     {
-        int bx = min(x0, x1), by = min(y0, y1);
-        int bw = abs(x1 - x0) + 1, bh = abs(y1 - y0) + 1;
+        long long bx = min(lx0, lx1), by = min(ly0, ly1);
+        long long bw = llabs(lx1 - lx0) + 1, bh = llabs(ly1 - ly0) + 1;
         int t = max(1, thickness);
+        if (t > kMaxBrush) t = kMaxBrush;
+
+        // Nothing of the bounding box (plus the brush) is on screen.
+        if (bx + bw - 1 + t < 0 || by + bh - 1 + t < 0 || bx >= w || by >= h) return;
+
+        // Bresenham takes max(|dx|,|dy|)+1 steps. Clipping the endpoints would
+        // change the pixel sequence, so a line far longer than the panel is
+        // refused outright instead: it cannot be meaningful here, and letting
+        // it run used to hang render() until the watchdog fired.
+        long long steps = max(bw, bh);
+        if (steps > kMaxLineSteps)
+        {
+            Serial.printf("⚠️ line spans %lld px — ignored (max %d)\n",
+                          steps, kMaxLineSteps);
+            return;
+        }
+
+        int x0 = (int)lx0, y0 = (int)ly0, x1 = (int)lx1, y1 = (int)ly1;
         int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
         int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
         int err = dx + dy;
@@ -76,10 +124,11 @@ public:
             for (int oy = 0; oy < t; oy++)
                 for (int ox = 0; ox < t; ox++)
                 {
-                    int px_ = x + ox, py_ = y + oy;
+                    long long px_ = (long long)x + ox, py_ = (long long)y + oy;
+                    if (px_ < 0 || py_ < 0 || px_ >= w || py_ >= h) continue;
                     float u = bw > 1 ? (float)(px_ - bx) / (bw - 1) : 0;
                     float v = bh > 1 ? (float)(py_ - by) / (bh - 1) : 0;
-                    blend(px_, py_, cs.at(u, v));
+                    blend((int)px_, (int)py_, cs.at(u, v));
                 }
             if (x == x1 && y == y1) break;
             int e2 = 2 * err;
@@ -90,55 +139,70 @@ public:
 
     // Rectangle from (x,y), size dx*dy. border<=0 → fill, else outline of that
     // thickness. Colored via ColorSpec across the rect's box.
-    void rect(int x, int y, int dx, int dy, int border, const ColorSpec &cs)
+    void rect(long long x, long long y, long long dx, long long dy,
+              long long border, const ColorSpec &cs)
     {
         if (dx <= 0 || dy <= 0) return;
-        for (int j = 0; j < dy; j++)
-            for (int i = 0; i < dx; i++)
+        // Visit only the on-screen part; `dx`/`dy` still drive the gradient.
+        Span cx = clipX(x, x + dx - 1);
+        Span cy = clipY(y, y + dy - 1);
+        for (int py = cy.lo; py <= cy.hi; py++)
+            for (int px = cx.lo; px <= cx.hi; px++)
             {
+                long long i = px - x, j = py - y;
                 bool edge = (i < border) || (j < border) ||
                             (i >= dx - border) || (j >= dy - border);
                 if (border > 0 && !edge) continue;
                 float u = dx > 1 ? (float)i / (dx - 1) : 0;
                 float v = dy > 1 ? (float)j / (dy - 1) : 0;
-                blend(x + i, y + j, cs.at(u, v));
+                blend(px, py, cs.at(u, v));
             }
     }
 
     // Draw one glyph at (x,y). `cs` sampled across the glyph box.
-    void glyph(const Font &font, char ch, int x, int y, const ColorSpec &cs)
+    void glyph(const Font &font, char ch, long long x, long long y, const ColorSpec &cs)
     {
         int gw = font.glyphW(), gh = font.glyphH();
+        if (x + gw <= 0 || y + gh <= 0 || x >= w || y >= h) return;
         for (int gy = 0; gy < gh; gy++)
             for (int gx = 0; gx < gw; gx++)
                 if (font.pixel(ch, gx, gy))
                 {
+                    long long ax = x + gx, ay = y + gy;
+                    if (ax < 0 || ay < 0 || ax >= w || ay >= h) continue;
                     float u = gw > 1 ? (float)gx / (gw - 1) : 0;
                     float v = gh > 1 ? (float)gy / (gh - 1) : 0;
-                    blend(x + gx, y + gy, cs.at(u, v));
+                    blend((int)ax, (int)ay, cs.at(u, v));
                 }
     }
 
     // Draw a string; `cs` is sampled across the *whole string box* so gradients
     // span the full text, not each glyph.
-    void text(const Font &font, const String &s, int x, int y, const ColorSpec &cs)
+    void text(const Font &font, const String &s, long long x, long long y,
+              const ColorSpec &cs)
     {
         int total = font.measure(s);
         int gh = font.glyphH();
-        int penX = x;
+        int gw = font.glyphW();
+        if (y + gh <= 0 || y >= h) return; // whole line is above/below
+        long long penX = x;
         for (uint16_t k = 0; k < s.length(); k++)
         {
-            char ch = s[k];
-            int gw = font.glyphW();
-            for (int gy = 0; gy < gh; gy++)
-                for (int gx = 0; gx < gw; gx++)
-                    if (font.pixel(ch, gx, gy))
-                    {
-                        int absX = penX + gx;
-                        float u = total > 1 ? (float)(absX - x) / (total - 1) : 0;
-                        float v = gh > 1 ? (float)gy / (gh - 1) : 0;
-                        blend(absX, y + gy, cs.at(u, v));
-                    }
+            if (penX >= w) break;          // rest of the line is off the right
+            if (penX + gw > 0)             // skip glyphs off the left
+            {
+                char ch = s[k];
+                for (int gy = 0; gy < gh; gy++)
+                    for (int gx = 0; gx < gw; gx++)
+                        if (font.pixel(ch, gx, gy))
+                        {
+                            long long absX = penX + gx, absY = y + gy;
+                            if (absX < 0 || absY < 0 || absX >= w || absY >= h) continue;
+                            float u = total > 1 ? (float)(absX - x) / (total - 1) : 0;
+                            float v = gh > 1 ? (float)gy / (gh - 1) : 0;
+                            blend((int)absX, (int)absY, cs.at(u, v));
+                        }
+            }
             penX += font.advance();
         }
     }

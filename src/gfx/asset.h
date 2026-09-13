@@ -17,6 +17,12 @@ struct Asset
 
 namespace AssetLoader
 {
+    // Sanity limits for an untrusted BMP header. 512 KB of decoded pixels is
+    // already far more than any panel needs and comfortably beyond what the
+    // heap can spare on an ESP32.
+    static const int kMaxDim = 4096;
+    static const size_t kMaxBytes = 512 * 1024;
+
     inline uint32_t rd32(File &f)
     {
         uint8_t b[4];
@@ -58,23 +64,57 @@ namespace AssetLoader
             return a;
         }
 
-        int absH = abs(bmpH);
+        // The header is untrusted: /file/uploadasset stores whatever bytes it
+        // is given, and a truncated upload can leave a plausible-looking but
+        // wrong header behind. Without these checks a negative or huge width
+        // made the allocation below throw std::length_error — which is an
+        // abort() and a panic reset on the device.
+        if (bmpW <= 0 || bmpH == 0 || bmpW > kMaxDim ||
+            bmpH > kMaxDim || bmpH < -kMaxDim)
+        {
+            Serial.printf("⚠️ asset %s: implausible size %dx%d (max %d)\n",
+                          path.c_str(), (int)bmpW, (int)bmpH, kMaxDim);
+            f.close();
+            return a;
+        }
+        int absH = (bmpH > 0) ? bmpH : -bmpH;
+        size_t need = (size_t)bmpW * (size_t)absH * 4;
+        if (need > kMaxBytes)
+        {
+            Serial.printf("⚠️ asset %s: %ux%u needs %u bytes, over the %u-byte limit\n",
+                          path.c_str(), (unsigned)bmpW, (unsigned)absH,
+                          (unsigned)need, (unsigned)kMaxBytes);
+            f.close();
+            return a;
+        }
+
         bool bottomUp = (bmpH > 0);
         a.w = bmpW;
         a.h = absH;
-        a.bgra.assign((size_t)bmpW * absH * 4, 0);
+        a.bgra.assign(need, 0);
+        if (a.bgra.size() != need) { f.close(); return a; } // allocation failed
         uint32_t rowSize = (uint32_t)bmpW * 4; // 32bpp is inherently 4-aligned
 
         std::vector<uint8_t> row(rowSize);
+        bool complete = true;
         for (int srcY = 0; srcY < absH; srcY++)
         {
             int dstY = bottomUp ? (absH - 1 - srcY) : srcY;
             f.seek(dataOffset + (uint32_t)srcY * rowSize);
-            if (f.read(row.data(), rowSize) != (int)rowSize) break;
+            if (f.read(row.data(), rowSize) != (int)rowSize) { complete = false; break; }
             // file order is B,G,R,A already — copy straight through
             memcpy(a.bgra.data() + (size_t)dstY * rowSize, row.data(), rowSize);
         }
         f.close();
+        // A short file used to report ok with the missing rows left black;
+        // treating it as broken shows the missing-asset marker instead.
+        if (!complete)
+        {
+            Serial.printf("⚠️ asset %s: pixel data ends early\n", path.c_str());
+            a.bgra.clear();
+            a.w = a.h = 0;
+            return a;
+        }
         a.ok = true;
         return a;
     }

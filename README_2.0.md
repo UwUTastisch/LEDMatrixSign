@@ -105,7 +105,7 @@ of the second frame) for use in `clear`.
 | `scrolling_text` | `x,y,dx,dy,text,font,color,scroll_speed,scroll_direction` | scrolls within the `dx`×`dy` viewport; speed in px/s; direction `horizontal`\|`vertical` |
 | `line` | `x,y,dx,dy,thickness,color` | `dx,dy` are deltas; endpoint is `(x+dx, y+dy)` |
 | `rectangle` | `x,y,dx,dy,border,color` | `border` 0 = filled, else outline thickness |
-| `asset` | `x,y,name,color` | draws `assets/<name>`; `color` tints monochrome assets |
+| `asset` | `x,y,name,color` | draws `assets/<name>`, or `<animid>/<file>` for another animation's asset (required on the API overlay, which has no animation of its own); `color` tints monochrome assets |
 
 `color` is `#rgb`, `#rrggbb`, `#rrggbbaa`, or
 `linear-gradient(<deg>deg, <stop>, <stop>, …)`. A malformed color falls back to

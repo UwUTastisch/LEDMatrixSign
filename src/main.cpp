@@ -39,6 +39,11 @@ void setUpStaticRoutes()
 {
     server.on("/", HTTP_GET, serveIndex);
     server.on("/index.html", HTTP_GET, serveIndex);
+
+    // Let the web UI talk to the sign when it's opened from a local file or
+    // hosted elsewhere. The UI sends JSON bodies as text/plain so browsers
+    // skip the CORS preflight; this header lets them read the replies.
+    DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
 }
 
 // ====== Captive-portal (AP fallback) ======

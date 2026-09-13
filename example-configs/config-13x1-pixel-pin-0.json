@@ -1,0 +1,39 @@
+{
+  "hw": {
+    "led": {
+      "total": 13,
+      "ins": [
+        {
+          "start": 0,
+          "len": 13,
+          "pin": [0],
+          "order": 0,
+          "rev": false,
+          "skip": 0
+        }
+      ],
+      "matrix": {
+        "panels": [
+          {
+            "b": true,
+            "r": true,
+            "v": false,
+            "s": false,
+            "x": 0,
+            "y": 0,
+            "h": 13,
+            "w": 1
+          }
+        ]
+      }
+    }
+  },
+  "wifi": {
+    "ssid": "YourNetworkSSID",
+    "password": "YourNetworkPassword"
+  },
+  "ap": {
+    "ssid": "ESP32_AP_Example",
+    "password": "test1234"
+  }
+}

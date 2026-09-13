@@ -5,6 +5,12 @@
 // composites 0 over 1 and hands the result to the matrix driver. Both layers
 // are retained-mode: drawables persist until a `clear` removes them.
 #pragma once
+#if defined(ARDUINO_ARCH_ESP32) || defined(ESP_PLATFORM)
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+#else
+#include <mutex>
+#endif
 #include <Arduino.h>
 #include <functional>
 #include "composition.h"
@@ -42,7 +48,15 @@ public:
         for (const auto &d : f.drawables)
         {
             d->bind(params, animDir);
-            live.push_back(d);
+            // Avoid adding duplicates: if an equivalent object already
+            // exists in `live`, skip pushing this one to prevent stacking on
+            // repeated frame applications (common for single-frame anims).
+            bool found = false;
+            for (const auto &ex : live)
+            {
+                if (ex->type() == d->type() && ex->equals(*d)) { found = true; break; }
+            }
+            if (!found) live.push_back(d);
         }
     }
 
@@ -130,10 +144,21 @@ public:
 
             if (top.frameIdx >= (int)top.anim->frames.size())
             {
+                // An animation with no frames can never consume a slot below,
+                // so an infinite cycle count used to spin here forever and let
+                // the task watchdog reset the board. Drop it instead.
+                if (top.anim->frames.empty())
+                {
+                    Serial.println("⚠️ animation has no frames — stopping it");
+                    stack.pop_back();
+                    continue;
+                }
                 // finished a pass
                 if (top.cyclesLeft > 0) top.cyclesLeft--;
                 if (top.cyclesLeft == 0) { stack.pop_back(); continue; }
                 top.frameIdx = 0; // -1 (infinite) or remaining cycles
+                processedThisTick++; // a full pass counts, so a zero-duration
+                                     // loop yields instead of spinning
                 continue;
             }
 
@@ -148,6 +173,10 @@ public:
                 auto sub = std::make_shared<Animation>();
                 if (loader && loader(ld.name, *sub))
                 {
+                    // Clear primary before running a sub-animation so its
+                    // drawables don't accumulate across multiple sub-anims.
+                    ClearDirective clearAll; clearAll.all = true;
+                    primary.applyClear(clearAll);
                     Context c;
                     c.anim = sub;
                     c.params = sub->effectiveParams(ld.params);
@@ -198,12 +227,54 @@ private:
 };
 
 // Owns the two layers, the player, and the composite output.
+// Serialises access to the compositor.
+//
+// The HTTP handlers run on the AsyncTCP task while loop() renders on the
+// Arduino task. Without a lock, apiApplyFrame() reallocating a layer's object
+// vector while rasterize() iterates it is a use-after-free — the usual
+// symptom being a LoadProhibited panic after a burst of draw requests.
+// Recursive so a handler may hold the lock and still call a helper that takes
+// it.
+class CompositorLock
+{
+public:
+#if defined(ARDUINO_ARCH_ESP32) || defined(ESP_PLATFORM)
+    CompositorLock() { handle = xSemaphoreCreateRecursiveMutex(); }
+    void lock() { if (handle) xSemaphoreTakeRecursive(handle, portMAX_DELAY); }
+    void unlock() { if (handle) xSemaphoreGiveRecursive(handle); }
+private:
+    SemaphoreHandle_t handle = nullptr;
+#else
+    // Host builds (tools/host-test) use the standard library.
+    void lock() { m.lock(); }
+    void unlock() { m.unlock(); }
+private:
+    std::recursive_mutex m;
+#endif
+};
+
+// RAII guard.
+class CompositorGuard
+{
+public:
+    explicit CompositorGuard(CompositorLock &l) : lk(l) { lk.lock(); }
+    ~CompositorGuard() { lk.unlock(); }
+    CompositorGuard(const CompositorGuard &) = delete;
+    CompositorGuard &operator=(const CompositorGuard &) = delete;
+
+private:
+    CompositorLock &lk;
+};
+
 class FrameFactory
 {
 public:
     Layer api;     // buffer 0 — overlay
     Layer primary; // buffer 1 — FS animations
     Player player;
+    // Anything touching api/primary/player/out from an HTTP handler must hold
+    // this: `CompositorGuard g(factory.lock);`
+    CompositorLock lock;
     FrameBuffer out;
 
     void init(uint16_t w, uint16_t h)
@@ -219,14 +290,25 @@ public:
     // Apply a single API-buffer frame (from /framebuffer/draw).
     void apiApplyFrame(const Frame &f)
     {
+        CompositorGuard g(lock);
+        apiApplyFrameLocked(f);
+    }
+
+    void apiApplyFrameLocked(const Frame &f)
+    {
         static const Params empty;
         api.applyFrame(f, empty, "");
     }
-    void apiClear() { api.reset(); }
+    void apiClear()
+    {
+        CompositorGuard g(lock);
+        api.reset();
+    }
 
     // Advance time, rasterise both layers, composite 0 over 1 into `out`.
     void render(unsigned long now)
     {
+        CompositorGuard g(lock);
         float dt = (now - lastTickMs) / 1000.0f;
         if (dt < 0) dt = 0;
         lastTickMs = now;

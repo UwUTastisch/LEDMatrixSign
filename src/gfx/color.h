@@ -156,4 +156,32 @@ public:
         auto lerp = [&](uint8_t x, uint8_t y) { return (uint8_t)(x + (y - x) * f); };
         return Rgba(lerp(a.r, b.r), lerp(a.g, b.g), lerp(a.b, b.b), lerp(a.a, b.a));
     }
+    // Serialize back to a string that `parse()` accepts. Used when saving
+    // animations / API buffers to disk so color specs round-trip.
+    String toString() const
+    {
+        if (!gradient || stops.size() < 2)
+        {
+            if (stops.empty()) return String("#ffffff");
+            const Rgba &c = stops[0];
+            char buf[16];
+            if (c.a == 255)
+                snprintf(buf, sizeof(buf), "#%02x%02x%02x", c.r, c.g, c.b);
+            else
+                snprintf(buf, sizeof(buf), "#%02x%02x%02x%02x", c.r, c.g, c.b, c.a);
+            return String(buf);
+        }
+        // linear-gradient(<deg>deg, #rrggbb, #rrggbb, ...)
+        String out = "linear-gradient(";
+        out += String(angleDeg, 0);
+        out += "deg";
+        for (const Rgba &c : stops)
+        {
+            char buf[16];
+            snprintf(buf, sizeof(buf), ", #%02x%02x%02x", c.r, c.g, c.b);
+            out += String(buf);
+        }
+        out += ")";
+        return out;
+    }
 };

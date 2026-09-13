@@ -1,0 +1,1057 @@
+openapi: 3.0.3
+info:
+  title: LEDMatrixSign API
+  version: "2.0.1"
+  description: |
+    REST API of the LEDMatrixSign 2.0 firmware (`feature/2.0-compositor`):
+    framebuffer, animations, files and display settings.
+
+    Verified against `src/api/api_v2.h`, `src/anim/composition.h`,
+    `src/anim/framefactory.h` and `src/storage.h`. Version 2.0.1 of this
+    document is a correctness pass over 2.0 — see `API-AUDIT.md` for the list
+    of fixes. The wire protocol itself did not change.
+
+    # Rendering model
+
+    The sign composites two retained layers into the output:
+
+    | Layer | Filled by | Cleared by |
+    |---|---|---|
+    | `primary` (below) | the animation player | starting or stopping an animation, or a `clear` in an animation frame |
+    | `api` (above) | `POST /framebuffer/draw` | a `clear` sent to `/framebuffer/draw` |
+
+    Both layers are *retained*: a drawable stays visible until something clears
+    it. Drawing is not a one-shot blit — every object lives in a list, and the
+    layer is re-rasterised from that list on every render pass. So sending one
+    `text` leaves it on screen indefinitely, and sending another adds to it.
+
+    Alpha compositing is source-over with 8-bit integer maths, and the output
+    alpha is `max(src, dst)`. A pixel nothing was drawn to keeps alpha 0.
+
+    # Object identity
+
+    Every drawable gets an `id` of the form `<frame>:<index>`, where `<frame>`
+    is 0 for anything sent to `/framebuffer/draw` and the 1-based frame number
+    inside an animation, and `<index>` counts drawables within that frame from
+    1. A drawable may also carry an `objname` chosen by the client.
+
+    `clear.obj` entries match either form: an `objname`, or the id prefixed
+    with `f` (so id `0:2` is referenced as `f0:2`). Every object matching a
+    reference is removed, so unnamed objects sent in the same request share a
+    frame handle and are cleared together.
+
+    There is no partial update. To change an object, clear it and draw it again
+    with the same `objname`.
+
+    Re-applying a frame does not stack duplicates: an incoming drawable that is
+    structurally equal to one already in the layer (all fields including
+    `objname`, ignoring `id`) is dropped.
+
+    # Colours
+
+    `color` accepts `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, or
+    `linear-gradient(<angle>deg, <colour>, <colour>[, ...])`. Angles follow the
+    CSS convention (0deg points up, increasing clockwise) and the gradient
+    spans the object's bounding box. Anything unparseable silently becomes
+    opaque white — the API never rejects a colour.
+
+    # Fonts
+
+    `font` accepts `5x7`, `10x14`, `12x16_serif` (and `12x16` as an alias).
+    Unknown names fall back to `5x7` without an error. The firmware ships one
+    glyph set (5x7, ASCII 0x20-0x7E); the larger fonts are integer upscales of
+    it, and characters outside that range render as `?`.
+
+    # Parameters
+
+    Text in `text` and `scrolling_text` may contain `{name}` placeholders.
+    They are substituted from the animation's `default_params` merged with the
+    `params` given to `/anim/start` (or to `load_anim`). A placeholder with no
+    value is left in the text literally, braces included. Parameters do not
+    reach the `api` layer: placeholders sent to `/framebuffer/draw` are always
+    rendered literally.
+
+    # Conventions
+
+    - All request bodies are JSON. The firmware parses the body regardless of
+      `Content-Type`, so a client that wants to avoid a CORS preflight can send
+      `text/plain`.
+    - Responses are JSON. Errors are `{"error": "<short reason>"}` with a 4xx
+      or 5xx status.
+    - There is no authentication, no rate limiting and no CSRF protection.
+      Anything that can reach the device can drive it.
+    - Unknown fields in a request are ignored; missing fields take the
+      documented default.
+    - `GET /` and `GET /index.html` serve `/index.html` from the device
+      filesystem if present. That is the only non-API route.
+
+servers:
+  - url: http://{host}
+    description: |
+      The sign itself. `4.3.2.1` is the access-point address configured in
+      `src/config.h`; on an existing network use the address from the serial
+      log or your router. A page served by the sign should use relative paths
+      instead.
+    variables:
+      host:
+        default: 4.3.2.1
+
+tags:
+  - name: framebuffer
+    description: Draw on the overlay and read back what's on the panel
+  - name: file
+    description: Animations and assets in device storage
+  - name: anim
+    description: The animation player
+  - name: display
+    description: Panel settings
+
+paths:
+  /framebuffer/draw:
+    post:
+      tags: [framebuffer]
+      summary: Apply one frame to the overlay layer
+      description: |
+        The body is a single animation frame. Its drawables are added to the
+        retained `api` layer and its `clear` directives are applied first.
+
+        `duration` is ignored here (there is no timeline on this layer), and so
+        is `load_anim` — only the player acts on that.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Frame'
+            examples:
+              singleText:
+                summary: One named text object
+                value:
+                  text: {x: 0, y: 0, text: "hello", font: "5x7", color: "#ffb000", objname: "greeting"}
+              ordered:
+                summary: Several objects, stacking order preserved
+                value:
+                  drawables:
+                    - rectangle: {x: 0, y: 0, dx: 64, dy: 16, border: 0, color: "#001030"}
+                    - text: {x: 2, y: 4, text: "on top", color: "#ffffff"}
+              clearOne:
+                summary: Remove one object by name
+                value:
+                  clear: {obj: ["greeting"]}
+              clearAll:
+                summary: Empty the overlay
+                value:
+                  clear: {}
+      responses:
+        '200':
+          description: Applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [ok]}
+              example: {status: "ok"}
+        '400':
+          $ref: '#/components/responses/BadJson'
+
+  /framebuffer/savetostorage:
+    post:
+      tags: [framebuffer]
+      summary: Save the overlay as a one-frame animation
+      description: |
+        Serialises the current `api` layer into `/anim/<animname>/<filename>`
+        as a complete animation document: one frame holding a `drawables`
+        array, with `duration` 1000.
+
+        The animation directory and its `assets/` subdirectory are created if
+        needed. An existing file at that path is overwritten without warning.
+        `animname` is not validated (see `API-AUDIT.md`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                animname:
+                  type: string
+                  description: Animation id, used as the directory name under /anim/
+                filename:
+                  type: string
+                  default: anim.json
+                  description: File to write inside the animation directory
+              required: [animname]
+            example: {animname: "my_overlay", filename: "anim.json"}
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [ok]}
+                  path: {type: string, description: Full path written}
+              example: {status: "ok", path: "/anim/my_overlay/anim.json"}
+        '400':
+          description: Malformed JSON, or animname missing
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              examples:
+                badJson: {value: {error: "bad json"}}
+                missing: {value: {error: "missing animname"}}
+        '500':
+          description: Filesystem write failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "fs write"}
+
+  /framebuffer/get:
+    get:
+      tags: [framebuffer]
+      summary: Read the composited framebuffer
+      description: |
+        Returns the panel contents after compositing both layers: one pixel per
+        LED, row-major from the top-left, 4 bytes per pixel in **B, G, R, A**
+        order, base64-encoded. Length is `width * height * 4` bytes before
+        encoding.
+
+        Brightness is applied by the panel driver and is *not* reflected here.
+        Requesting this endpoint also advances the render clock, so polling it
+        drives animation playback the same way the panel does.
+      responses:
+        '200':
+          description: Framebuffer contents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FramebufferGetResponse'
+
+  /framebuffer/getcomposition:
+    get:
+      tags: [framebuffer]
+      summary: List the objects on both layers
+      description: |
+        Object identity and stacking order only — no geometry. Each entry has
+        its type, its `id` and its `objname` if it has one, in bottom-to-top
+        order. There is no way to read an object's position or colour back out
+        of the device, so a client that wants to show or edit those must
+        remember what it drew.
+      responses:
+        '200':
+          description: Layer contents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FramebufferCompositionResponse'
+
+  /framebuffer/size:
+    get:
+      tags: [framebuffer]
+      summary: Panel size in LEDs
+      description: |
+        From the device configuration, so this is the panel's real size even
+        before anything has been drawn.
+      responses:
+        '200':
+          description: Size
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  width: {type: integer}
+                  height: {type: integer}
+              example: {width: 64, height: 32}
+
+  /file/uploadanim:
+    post:
+      tags: [file]
+      summary: Write an animation document
+      description: |
+        Stores `anim` verbatim as `/anim/<animname>/anim.json`, replacing any
+        existing file. The document is **not** validated: a malformed animation
+        is accepted here and only fails (or renders nothing) when played.
+        `tools/validate_anim.py` in the firmware repo checks a document against
+        what the parser accepts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                animname: {type: string}
+                anim:
+                  $ref: '#/components/schemas/Animation'
+              required: [animname, anim]
+            example:
+              animname: "hello"
+              anim:
+                default_params: {greeting: "hi"}
+                frames:
+                  - text: {x: 0, y: 0, text: "{greeting}", color: "#ffb000"}
+                    duration: 2000
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [ok]}
+                  animname: {type: string}
+              example: {status: "ok", animname: "hello"}
+        '400':
+          description: Malformed JSON, or animname/anim missing
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              examples:
+                badJson: {value: {error: "bad json"}}
+                missingName: {value: {error: "missing animname"}}
+                missingAnim: {value: {error: "missing anim"}}
+        '500':
+          description: Filesystem write failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "fs write"}
+
+  /file/uploadasset:
+    post:
+      tags: [file]
+      summary: Write an asset into an animation's assets folder
+      description: |
+        Decodes `data` and writes it to `/anim/<animname>/assets/<filename>`,
+        replacing any existing file. The animation directory is created if
+        needed, so an asset can be uploaded before its animation exists.
+
+        The bytes must be a **32-bit BGRA8888 BMP** with a `BITMAPINFOHEADER`
+        and `BI_RGB` or `BI_BITFIELDS` compression; `tools/bmp_bgra.py` in the
+        firmware repo writes that format. Nothing is validated on upload — a
+        file in any other format is stored happily and then draws as the
+        missing-asset marker. 24-bit BMPs are a common case of this.
+
+        Neither `animname` nor `filename` is validated (see `API-AUDIT.md`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadAssetRequest'
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [ok]}
+                  bytes: {type: integer, description: Number of decoded bytes written}
+              example: {status: "ok", bytes: 1084}
+        '400':
+          description: Malformed JSON, or a missing field
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "missing animname/filename/data"}
+        '500':
+          description: Filesystem write failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "fs write"}
+
+  /file/ls:
+    get:
+      tags: [file]
+      summary: List animations and their assets
+      description: |
+        One entry per directory under `/anim/`, with the file names in that
+        animation's `assets/` folder. Directory order is whatever the
+        filesystem returns, so sort client-side if you need stable output. An
+        animation directory with no `anim.json` still appears.
+      responses:
+        '200':
+          description: Animation list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  anims:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        assets:
+                          type: array
+                          items: {type: string}
+              example:
+                anims:
+                  - id: "de.uwutastisch.blahaj"
+                    assets: ["blahaj.bmp"]
+
+  /file/download:
+    get:
+      tags: [file]
+      summary: Download a file from device storage
+      description: |
+        Restricted to paths under `/anim/` and to `/config.json`; anything else
+        is refused. A leading slash is added if missing. Content type is
+        `application/json` for `.json`, `image/bmp` for `.bmp`, and
+        `application/octet-stream` otherwise.
+
+        This is the only way to read an animation document or an asset back out
+        of the device.
+      parameters:
+        - name: path
+          in: query
+          required: true
+          schema: {type: string}
+          examples:
+            animDoc: {value: "/anim/hello/anim.json"}
+            asset: {value: "/anim/hello/assets/icon.bmp"}
+            config: {value: "/config.json"}
+      responses:
+        '200':
+          description: File contents
+          content:
+            application/json:
+              schema: {type: object}
+            image/bmp:
+              schema: {type: string, format: binary}
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '400':
+          description: The path parameter is missing
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "missing path"}
+        '403':
+          description: Path outside the permitted roots
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "forbidden"}
+        '404':
+          description: No such file
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "not found"}
+
+  /file/fsstatus:
+    get:
+      tags: [file]
+      summary: Storage usage
+      responses:
+        '200':
+          description: Filesystem status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fs:
+                    type: string
+                    enum: [sd, littlefs]
+                    description: Which storage the firmware mounted at boot
+                  total: {type: integer, description: Bytes}
+                  used: {type: integer, description: Bytes}
+                  free:
+                    type: integer
+                    description: "Bytes: total minus used, or 0 if used exceeds total"
+              example: {fs: "littlefs", total: 1441792, used: 208896, free: 1232896}
+
+  /anim/start:
+    post:
+      tags: [anim]
+      summary: Play an animation
+      description: |
+        Loads `/anim/<animname>/anim.json`, clears the `primary` layer and
+        starts playing from its first frame, replacing anything already
+        playing. The overlay layer is untouched and keeps drawing on top.
+
+        `params` values may be strings or numbers; numbers are converted to
+        strings (a float conversion, so `7` becomes `"7.00"`). They override
+        the document's `default_params` for this run only.
+
+        Playback advances when the panel refreshes, so on a headless setup it
+        also advances whenever `/framebuffer/get` or `/anim/status` is called.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnimStartRequest'
+            examples:
+              forever:
+                summary: Loop until stopped
+                value: {animname: "hello", cycles: 0}
+              withParams:
+                value: {animname: "hello", cycles: 3, params: {greeting: "moin"}}
+      responses:
+        '200':
+          description: Started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [started]}
+                  animname: {type: string}
+              example: {status: "started", animname: "hello"}
+        '400':
+          description: Malformed JSON, or animname missing
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "missing animname"}
+        '404':
+          description: No such animation, or its anim.json is unreadable
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "anim not found"}
+
+  /anim/setspeed:
+    post:
+      tags: [anim]
+      summary: Set the global playback speed
+      description: |
+        Multiplies every frame duration: 2.0 plays twice as fast. Applies to
+        the running animation and to later ones, including nested animations,
+        whose own `speed` multiplies with this one. It does **not** affect
+        `scroll_speed`, which is in pixels per second of real time.
+
+        Values of 0 or less are replaced by 1.0. The reply reports the value
+        that took effect.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                speed:
+                  type: number
+                  default: 1
+                  minimum: 0
+                  exclusiveMinimum: true
+              example: {speed: 1.5}
+      responses:
+        '200':
+          description: Applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [ok]}
+                  speed: {type: number}
+              example: {status: "ok", speed: 1.5}
+        '400':
+          $ref: '#/components/responses/BadJson'
+
+  /anim/stop:
+    post:
+      tags: [anim]
+      summary: Stop playback and clear the animation layer
+      description: |
+        Always succeeds, even when nothing is playing. Takes no body. The
+        overlay layer is left alone.
+      responses:
+        '200':
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [stopped]}
+              example: {status: "stopped"}
+
+  /anim/status:
+    get:
+      tags: [anim]
+      summary: Player status
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  running:
+                    type: boolean
+                    description: True while an animation is on the stack
+                  paused:
+                    type: boolean
+                    description: |
+                      The player supports pausing, but no endpoint sets it, so
+                      this is always false in 2.0.
+                  speed:
+                    type: number
+                    description: The global speed scale
+                  animname:
+                    type: string
+                    description: |
+                      The animation's *directory*, e.g. `/anim/hello` — not the
+                      bare id sent to /anim/start. Empty after /anim/stop, but
+                      keeps the last value when an animation ends by itself, so
+                      check `running` too. While a nested animation plays this
+                      still names the outermost one.
+              example: {running: true, paused: false, speed: 1, animname: "/anim/hello"}
+
+  /display/brightness:
+    get:
+      tags: [display]
+      summary: Get panel brightness
+      responses:
+        '200':
+          description: Brightness
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  brightness: {type: integer, minimum: 0, maximum: 255}
+              example: {brightness: 128}
+    post:
+      tags: [display]
+      summary: Set panel brightness
+      description: |
+        Scales the whole panel, 0-255; values outside that range are clamped,
+        and a missing field means 255. Applied by the driver on output, so
+        `/framebuffer/get` is unaffected. Not persisted across reboots.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisplayBrightnessRequest'
+      responses:
+        '200':
+          description: Applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [ok]}
+                  brightness: {type: integer}
+              example: {status: "ok", brightness: 200}
+        '400':
+          $ref: '#/components/responses/BadJson'
+
+  /display/gpiopins:
+    get:
+      tags: [display]
+      summary: Configured GPIO pins
+      description: |
+        `data_pin` comes from the device configuration; the SD pins are
+        compile-time constants. Informational only — nothing here can be
+        changed through the API.
+      responses:
+        '200':
+          description: Pin assignment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data_pin: {type: integer, description: LED data line}
+                  sd:
+                    type: object
+                    description: SPI pins for the SD card slot
+                    properties:
+                      cs: {type: integer}
+                      mosi: {type: integer}
+                      miso: {type: integer}
+                      sck: {type: integer}
+              example: {data_pin: 10, sd: {cs: 4, mosi: 3, miso: 1, sck: 2}}
+
+components:
+  responses:
+    BadJson:
+      description: The body could not be parsed as JSON
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}
+          example: {error: "bad json"}
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Short, human-readable reason
+      required: [error]
+
+    Color:
+      type: string
+      description: |
+        `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, or
+        `linear-gradient(<angle>deg, <colour>, <colour>[, ...])`. Unparseable
+        values render as opaque white.
+      example: "#ffb000"
+
+    Font:
+      type: string
+      description: |
+        `5x7`, `10x14`, or `12x16_serif` (`12x16` is an alias). Unknown names
+        fall back to `5x7`.
+      default: "5x7"
+      example: "5x7"
+
+    Objname:
+      type: string
+      description: |
+        Client-chosen handle used by `clear.obj`. Optional, and not required to
+        be unique — a `clear` removes every object that matches.
+
+    TextDrawable:
+      type: object
+      description: A line of text with its top-left corner at (x, y).
+      properties:
+        x: {type: integer, default: 0}
+        y: {type: integer, default: 0}
+        text:
+          type: string
+          default: ""
+          description: May contain `{param}` placeholders (animations only).
+        font: {$ref: '#/components/schemas/Font'}
+        color: {$ref: '#/components/schemas/Color'}
+        objname: {$ref: '#/components/schemas/Objname'}
+
+    ScrollTextDrawable:
+      type: object
+      description: |
+        Text scrolling inside a window. (x, y) is the window's top-left corner
+        and (dx, dy) its size in pixels; anything outside is clipped, so a
+        window of zero width or height shows nothing. Text enters from the
+        right (horizontal) or bottom (vertical) and wraps around continuously.
+        The phase advances with real time and is retained, so it keeps moving
+        across animation cycles and survives being re-applied.
+      properties:
+        x: {type: integer, default: 0}
+        y: {type: integer, default: 0}
+        dx: {type: integer, default: 0, description: Window width}
+        dy: {type: integer, default: 0, description: Window height}
+        text: {type: string, default: ""}
+        font: {$ref: '#/components/schemas/Font'}
+        color: {$ref: '#/components/schemas/Color'}
+        scroll_speed:
+          type: number
+          default: 0
+          description: |
+            Pixels per second of real time, unaffected by the playback speed.
+            0 holds the text still at the start of its window.
+        scroll_direction:
+          type: string
+          enum: [horizontal, vertical]
+          default: horizontal
+          description: Any value other than `vertical` is treated as horizontal.
+        objname: {$ref: '#/components/schemas/Objname'}
+
+    LineDrawable:
+      type: object
+      description: |
+        A Bresenham line from (x, y) to (x + dx, y + dy) — dx and dy are
+        offsets, not a second point. `thickness` extends right and down from
+        each plotted pixel. A gradient spans the line's bounding box.
+      properties:
+        x: {type: integer, default: 0}
+        y: {type: integer, default: 0}
+        dx: {type: integer, default: 0, description: Offset to the end point}
+        dy: {type: integer, default: 0, description: Offset to the end point}
+        thickness: {type: integer, default: 1, minimum: 1}
+        color: {$ref: '#/components/schemas/Color'}
+        objname: {$ref: '#/components/schemas/Objname'}
+
+    RectangleDrawable:
+      type: object
+      description: |
+        A rectangle with (dx, dy) as its width and height, so 0 in either draws
+        nothing.
+      properties:
+        x: {type: integer, default: 0}
+        y: {type: integer, default: 0}
+        dx: {type: integer, default: 0, description: Width}
+        dy: {type: integer, default: 0, description: Height}
+        border:
+          type: integer
+          default: 0
+          description: |
+            Outline width in pixels; 0 fills the rectangle. A border at least
+            half the smaller side also fills it.
+        color: {$ref: '#/components/schemas/Color'}
+        objname: {$ref: '#/components/schemas/Objname'}
+
+    AssetDrawable:
+      type: object
+      description: |
+        A bitmap from storage, with its top-left corner at (x, y). Assets are
+        read from the filesystem on every render pass — there is no cache.
+      properties:
+        x: {type: integer, default: 0}
+        y: {type: integer, default: 0}
+        name:
+          type: string
+          description: |
+            `file.bmp` resolves inside the drawing animation's own `assets/`
+            folder. `<animid>/file.bmp` resolves to that animation's `assets/`
+            folder from anywhere, which is the only form that works on the
+            overlay layer, since it has no animation of its own. (The second
+            form needs the `ui-support` firmware patch; before it, a bare name
+            on the overlay always drew the missing-asset marker.)
+
+            A file that is missing, or not a 32-bit BGRA8888 BMP, draws a 4x4
+            magenta-and-black checkerboard at (x, y) instead.
+        color:
+          allOf: [{$ref: '#/components/schemas/Color'}]
+          description: |
+            Optional tint. When set, each pixel's luminance is multiplied by
+            this colour, which recolours monochrome art and flattens colour
+            art. Omit it to blit the bitmap unchanged. Only the first colour of
+            a gradient is used.
+        objname: {$ref: '#/components/schemas/Objname'}
+
+    ClearDirective:
+      type: object
+      description: |
+        `{}` (or any object without `obj`) clears the whole layer. With `obj`,
+        only the objects matching those references are removed.
+
+        The firmware does not read an `all` field: `{"all": false}` clears
+        everything, because what it checks is whether `obj` is present.
+      properties:
+        obj:
+          type: array
+          description: |
+            `objname` values, or frame handles `f<frame>:<index>` built from an
+            object's `id` (id `0:2` becomes `f0:2`). References that match
+            nothing are ignored.
+          items: {type: string}
+      example: {obj: ["greeting", "f0:2"]}
+
+    LoadAnimDirective:
+      type: object
+      description: |
+        Plays another animation as a step of this one. Only meaningful inside
+        an animation document — the player ignores it on the overlay layer.
+
+        The animation layer is cleared before the sub-animation starts, and the
+        parent resumes at its next frame once the sub-animation has run its
+        cycles. Nesting is capped at 8 levels; deeper `load_anim` directives are
+        skipped. A `load_anim` frame's own `duration` is not waited out.
+
+        If the named animation cannot be loaded, playback simply continues with
+        the parent's next frame. (The firmware means to draw a marker here, but
+        it is overwritten before it reaches the panel.)
+      properties:
+        name: {type: string, description: "Animation id, as used by /anim/start"}
+        cycles:
+          type: integer
+          default: 1
+          description: |
+            Repeats; 0 or less means 1 — unlike /anim/start, it cannot loop
+            forever.
+        speed:
+          type: number
+          default: 1
+          description: Multiplies the parent's speed. 0 or less means 1.
+        params:
+          type: object
+          additionalProperties: {type: string}
+          description: Overrides the sub-animation's own default_params.
+      required: [name]
+
+    Frame:
+      type: object
+      description: |
+        One step of an animation, and also the body of `/framebuffer/draw`.
+
+        Drawables can be given in two ways. Either as a `drawables` array of
+        single-key objects, which fixes their order and is what the firmware
+        writes when saving; **when `drawables` is present, every other key
+        except `duration` is ignored**. Or as one key per type, each holding
+        either a single object or an array of them — in which case key order is
+        JSON object order.
+      properties:
+        duration:
+          type: integer
+          default: 0
+          description: |
+            Milliseconds to hold this frame during playback, divided by the
+            playback speed. 0 moves on immediately, which is what a frame
+            holding only a `clear` or `load_anim` normally wants. Ignored by
+            `/framebuffer/draw`. At most 64 zero-duration frames are processed
+            per render pass.
+        drawables:
+          type: array
+          description: Ordered drawables; each item has exactly one key.
+          items:
+            type: object
+            properties:
+              text: {$ref: '#/components/schemas/TextDrawable'}
+              scrolling_text: {$ref: '#/components/schemas/ScrollTextDrawable'}
+              line: {$ref: '#/components/schemas/LineDrawable'}
+              rectangle: {$ref: '#/components/schemas/RectangleDrawable'}
+              asset: {$ref: '#/components/schemas/AssetDrawable'}
+            minProperties: 1
+            maxProperties: 1
+        clear: {$ref: '#/components/schemas/ClearDirective'}
+        load_anim: {$ref: '#/components/schemas/LoadAnimDirective'}
+        text:
+          oneOf:
+            - $ref: '#/components/schemas/TextDrawable'
+            - type: array
+              items: {$ref: '#/components/schemas/TextDrawable'}
+        scrolling_text:
+          oneOf:
+            - $ref: '#/components/schemas/ScrollTextDrawable'
+            - type: array
+              items: {$ref: '#/components/schemas/ScrollTextDrawable'}
+        line:
+          oneOf:
+            - $ref: '#/components/schemas/LineDrawable'
+            - type: array
+              items: {$ref: '#/components/schemas/LineDrawable'}
+        rectangle:
+          oneOf:
+            - $ref: '#/components/schemas/RectangleDrawable'
+            - type: array
+              items: {$ref: '#/components/schemas/RectangleDrawable'}
+        asset:
+          oneOf:
+            - $ref: '#/components/schemas/AssetDrawable'
+            - type: array
+              items: {$ref: '#/components/schemas/AssetDrawable'}
+
+    Animation:
+      type: object
+      description: |
+        The contents of an `anim.json`. Frames play in order, then repeat
+        according to the cycle count given to `/anim/start`.
+      properties:
+        default_params:
+          type: object
+          additionalProperties: {type: string}
+          description: Default values for the `{name}` placeholders in this document.
+        frames:
+          type: array
+          items: {$ref: '#/components/schemas/Frame'}
+          description: |
+            Must be present and an array, or the document is rejected as
+            unreadable (`/anim/start` answers 404). Note that an empty array
+            combined with `cycles: 0` hangs the firmware — see `API-AUDIT.md`.
+      required: [frames]
+      example:
+        default_params: {greeting: "hello"}
+        frames:
+          - text: {x: 0, y: 0, text: "{greeting}", color: "#ffb000", objname: "g"}
+            duration: 2000
+          - clear: {obj: ["g"]}
+
+    UploadAssetRequest:
+      type: object
+      properties:
+        animname: {type: string, description: Animation the asset belongs to}
+        filename: {type: string, description: File name inside its assets/ folder}
+        data:
+          type: string
+          format: byte
+          description: Base64-encoded 32-bit BGRA8888 BMP
+      required: [animname, filename, data]
+      example: {animname: "hello", filename: "icon.bmp", data: "Qk1WBAAA..."}
+
+    AnimStartRequest:
+      type: object
+      properties:
+        animname: {type: string, description: Animation id (the directory name under /anim/)}
+        cycles:
+          type: integer
+          default: 0
+          description: Times to play the animation; 0 or less loops until stopped.
+        params:
+          type: object
+          additionalProperties:
+            oneOf: [{type: string}, {type: number}]
+          description: |
+            Values for `{name}` placeholders, overriding the document's
+            `default_params`. Numbers become strings with two decimals.
+      required: [animname]
+
+    DisplayBrightnessRequest:
+      type: object
+      properties:
+        brightness:
+          type: integer
+          default: 255
+          minimum: 0
+          maximum: 255
+          description: Out-of-range values are clamped.
+      example: {brightness: 200}
+
+    FramebufferGetResponse:
+      type: object
+      properties:
+        width: {type: integer}
+        height: {type: integer}
+        format:
+          type: string
+          enum: [BGRA8888]
+          description: Always BGRA8888 in 2.0.
+        data:
+          type: string
+          format: byte
+          description: |
+            Base64 of `width * height * 4` bytes, row-major from the top-left,
+            each pixel B, G, R, A.
+      example: {width: 64, height: 32, format: "BGRA8888", data: "AAAAAAAA..."}
+
+    LayerEntry:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [text, scrolling_text, line, rectangle, asset]
+        id:
+          type: string
+          description: |
+            `<frame>:<index>` — frame 0 for overlay objects, otherwise the
+            1-based frame number; index counts drawables within the frame from
+            1. Reference it in `clear.obj` with an `f` prefix.
+          example: "0:1"
+        objname: {type: string, description: Present only if the object has one}
+
+    FramebufferCompositionResponse:
+      type: object
+      properties:
+        width: {type: integer}
+        height: {type: integer}
+        primary:
+          type: array
+          description: The animation layer, bottom to top.
+          items: {$ref: '#/components/schemas/LayerEntry'}
+        api:
+          type: array
+          description: The overlay layer, bottom to top, drawn above `primary`.
+          items: {$ref: '#/components/schemas/LayerEntry'}
+      example:
+        width: 64
+        height: 32
+        primary: []
+        api: [{type: "text", id: "0:1", objname: "greeting"}]
