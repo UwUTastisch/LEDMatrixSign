@@ -88,8 +88,7 @@ Documented now, all of it verified against the source:
 1. **`{"frames": []}` with `cycles: 0` hangs the device.** `Player::tick`
    doesn't count a cycle rollover against `kMaxFramesPerTick`, so with no
    frames to consume the `while` loop never terminates and the watchdog
-   resets the board. Reproduced with `tools/host-test/render_dump.cpp`: the
-   process has to be killed. `/file/uploadanim` accepts such a document
+   resets the board. Reproduced on the host: the process has to be killed. `/file/uploadanim` accepts such a document
    happily. A one-line guard (pop the context when `frames` is empty, or count
    the rollover) would fix it.
 
@@ -121,12 +120,13 @@ changes rather than things the UI needs.
 
 - `openapi-spec-validator` accepts it as OpenAPI 3.0.3 (16 paths, 17
   operations, 19 schemas).
-- `dev/conformance.py` exercises every documented endpoint and behavioural
-  claim against a running implementation, and validates the responses against
-  the schemas in the spec. 87 checks, all passing against the simulator.
-- `dev/diff_firmware.py` renders 29 scenes through the real firmware
+- The frontend project's `dev/conformance.py` exercises every documented
+  endpoint and behavioural claim against a running implementation, and
+  validates the responses against the schemas in the spec. 87 checks, all
+  passing against the simulator.
+- Its `dev/diff_firmware.py` renders 33 scenes through this firmware's
   compositor (compiled on the host) and through the simulator and compares
-  every pixel: 65 frames, all identical.
+  every pixel: 71 frames, all identical.
 
 The conformance suite is the honest way to confirm the document against real
 hardware — it was written to run against either, and the parts that only read

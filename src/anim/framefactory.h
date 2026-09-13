@@ -299,12 +299,6 @@ public:
         static const Params empty;
         api.applyFrame(f, empty, "");
     }
-    void apiClear()
-    {
-        CompositorGuard g(lock);
-        api.reset();
-    }
-
     // Advance time, rasterise both layers, composite 0 over 1 into `out`.
     void render(unsigned long now)
     {

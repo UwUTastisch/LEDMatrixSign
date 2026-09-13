@@ -11,12 +11,3 @@ openapi/ledmatrixsign-api-2.0.yaml`.
 it left out, and five firmware issues the audit turned up — two of which are
 worth fixing (an animation with no frames and infinite cycles hangs the render
 loop; `animname`/`filename` reach the filesystem unvalidated).
-
-Two test suites live in the web UI repo next door:
-
-- `dev/conformance.py` — 87 checks of every documented endpoint and behaviour
-  against a running sign: `python3 dev/conformance.py --base http://4.3.2.1`
-  (add `--read-only` to skip anything that writes).
-- `dev/diff_firmware.py` — compiles `tools/host-test/render_dump.cpp` from
-  this repo and compares its output, pixel for pixel, against the Python
-  simulator: 29 scenes, 65 frames.

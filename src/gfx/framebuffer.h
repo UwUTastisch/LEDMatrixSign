@@ -78,17 +78,6 @@ public:
     }
 
     // ——— primitives ———
-    void hline(int x0, int x1, int y, const Rgba &c)
-    {
-        if (x0 > x1) std::swap(x0, x1);
-        for (int x = x0; x <= x1; x++) blend(x, y, c);
-    }
-    void vline(int x, int y0, int y1, const Rgba &c)
-    {
-        if (y0 > y1) std::swap(y0, y1);
-        for (int y = y0; y <= y1; y++) blend(x, y, c);
-    }
-
     // Bresenham line with `thickness` (square brush), colored by a ColorSpec
     // sampled along its bounding box.
     void line(long long lx0, long long ly0, long long lx1, long long ly1,

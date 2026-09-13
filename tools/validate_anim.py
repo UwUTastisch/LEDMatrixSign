@@ -24,7 +24,7 @@ from typing import List, Tuple
 
 DRAWABLE_TYPES = {"text", "scrolling_text", "line", "rectangle", "asset"}
 CONTROL_TYPES = {"clear", "load_anim"}
-KNOWN_FRAME_KEYS = DRAWABLE_TYPES | CONTROL_TYPES | {"duration"}
+KNOWN_FRAME_KEYS = DRAWABLE_TYPES | CONTROL_TYPES | {"duration", "drawables"}
 
 HEX_RE = re.compile(r"^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
 GRAD_RE = re.compile(r"^linear-gradient\s*\(", re.IGNORECASE)
@@ -45,20 +45,67 @@ def validate_color(value, where: str, warns: List[str]) -> None:
                      f"or linear-gradient(...) — firmware will fall back to white")
 
 
+def collect_drawables(frame: dict, idx: int, errors: List[str],
+                      warns: List[str]) -> List[Tuple[str, object]]:
+    """Return (type, object) pairs the way parseFrameObject() reads them.
+
+    Two frame shapes exist (src/anim/composition.h):
+      * {"drawables": [{"text": {...}}, {"asset": {...}}]} — an ordered list,
+        the shape /framebuffer/savetostorage writes. When present the firmware
+        parses it and returns, so every other key except "duration" is ignored.
+      * per-type keys, each either one object or a list of them:
+        {"text": {...}} or {"rectangle": [{...}, {...}]}
+    """
+    if "drawables" in frame:
+        arr = frame["drawables"]
+        if not isinstance(arr, list):
+            errors.append(f"frame {idx}: 'drawables' must be a list")
+            return []
+        ignored = [k for k in frame if k not in ("drawables", "duration")]
+        if ignored:
+            warns.append(f"frame {idx}: {', '.join(repr(k) for k in ignored)} "
+                         f"ignored next to 'drawables' — give clear/load_anim "
+                         f"a frame of their own")
+        out: List[Tuple[str, object]] = []
+        for j, item in enumerate(arr):
+            if not isinstance(item, dict) or not item:
+                errors.append(f"frame {idx}.drawables[{j}]: must be an object "
+                              f"like {{\"text\": {{...}}}}")
+                continue
+            key = next(iter(item))
+            if key not in DRAWABLE_TYPES:
+                errors.append(f"frame {idx}.drawables[{j}]: unknown drawable "
+                              f"type {key!r}")
+                continue
+            out.append((key, item[key]))
+        return out
+
+    out = []
+    for k in frame:
+        if k not in DRAWABLE_TYPES:
+            continue
+        value = frame[k]
+        for obj in (value if isinstance(value, list) else [value]):
+            out.append((k, obj))
+    return out
+
+
 def validate_frame(frame: dict, idx: int, assets_dir: str,
                    errors: List[str], warns: List[str]) -> None:
     if not isinstance(frame, dict):
         errors.append(f"frame {idx}: must be an object")
         return
 
-    keys = [k for k in frame.keys()]
-    has_clear = "clear" in keys
-    has_load = "load_anim" in keys
-    drawables = [k for k in keys if k in DRAWABLE_TYPES]
+    keys = list(frame.keys())
+    uses_list = "drawables" in frame
+    has_clear = "clear" in keys and not uses_list
+    has_load = "load_anim" in keys and not uses_list
 
     for k in keys:
         if k not in KNOWN_FRAME_KEYS:
             warns.append(f"frame {idx}: unknown key {k!r} (firmware ignores it)")
+
+    drawables = collect_drawables(frame, idx, errors, warns)
 
     # duration rules: required unless the frame is purely a clear or load_anim
     is_control_only = (has_clear or has_load) and not drawables
@@ -70,8 +117,7 @@ def validate_frame(frame: dict, idx: int, assets_dir: str,
                      f"frame will flash by)")
 
     # per-type checks
-    for k in drawables:
-        obj = frame[k]
+    for k, obj in drawables:
         if not isinstance(obj, dict):
             errors.append(f"frame {idx}.{k}: must be an object")
             continue
@@ -102,21 +148,31 @@ def validate_frame(frame: dict, idx: int, assets_dir: str,
         if isinstance(co, dict) and "obj" in co:
             if not isinstance(co["obj"], list):
                 errors.append(f"frame {idx}.clear.obj: must be a list of "
-                              f"'frame:index' strings")
+                              f"objnames or 'f<frame>:<index>' handles")
             else:
                 for ref in co["obj"]:
-                    if not isinstance(ref, str) or ":" not in ref:
-                        warns.append(f"frame {idx}.clear.obj: {ref!r} is not in "
-                                     f"'frame:index' form")
+                    if not isinstance(ref, str) or not ref:
+                        warns.append(f"frame {idx}.clear.obj: {ref!r} is not an "
+                                     f"objname or 'f<frame>:<index>' handle")
 
 
 def check_asset_present(name, assets_dir: str, idx: int,
                         warns: List[str]) -> None:
-    if not name or not assets_dir:
+    """Mirror resolveAssetPath() in src/anim/composition.h.
+
+    "file.bmp"          → this animation's assets/
+    "<animid>/file.bmp" → /anim/<animid>/assets/ (any animation's assets)
+    """
+    if not name or not assets_dir or not isinstance(name, str):
         return
-    path = os.path.join(assets_dir, name)
+    slash = name.find("/")
+    if slash > 0:
+        anim_root = os.path.dirname(os.path.dirname(os.path.abspath(assets_dir)))
+        path = os.path.join(anim_root, name[:slash], "assets", name[slash + 1:])
+    else:
+        path = os.path.join(assets_dir, name)
     if not os.path.isfile(path):
-        warns.append(f"frame {idx}.asset: '{name}' not found in {assets_dir} — "
+        warns.append(f"frame {idx}.asset: '{name}' not found at {path} — "
                      f"firmware will draw the 4x4 missing-asset pattern")
 
 

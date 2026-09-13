@@ -20,7 +20,7 @@ python3 api-tests/test_backend.py
 uvicorn api-tests.test_backend:app --reload
 ```
 
-Open the frontend at: http://127.0.0.1:8000/frontend/index.html
+Open the frontend at: http://127.0.0.1:8000/
 
 Notes
 - The server implements `/framebuffer/draw`, `/framebuffer/get`, `/framebuffer/size` and a websocket `/ws`.
@@ -31,12 +31,12 @@ Notes
 ```
 # Using environment variable
 export ESP_IP=192.168.1.42
-python3 esp_api_tests.py
+python3 esp_api_test.py
 ```
 Or
 ```
 # Using CLI argument (overrides env)
-python3 esp_api_tests.py --esp-ip 192.168.1.42
+python3 esp_api_test.py --esp-ip 192.168.1.42
 ```
 
 View the file 

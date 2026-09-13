@@ -190,9 +190,13 @@ curl -X POST sign.local/framebuffer/draw \
 
 ## Endpoints removed from 1.0
 
-`/api/img`, `/api/listimg`, `/api/imgchain`, `/api/imgspec`, `/api/display`,
-`/api/fssource`, and the bundled web UI (`/index.html`). Their roles are covered
-by `/file/*`, `/framebuffer/*`, and `/anim/*`. See [`MIGRATION.md`](MIGRATION.md).
+`/api/img`, `/api/listimg`, `/api/imgchain`, `/api/imgspec`, `/api/display`
+and `/api/fssource`. Their roles are covered by `/file/*`, `/framebuffer/*`
+and `/anim/*`. See [`MIGRATION.md`](MIGRATION.md).
+
+The web UI is no longer compiled into the firmware, but it is still served:
+drop an `index.html` on the filesystem (one ships in
+`example-sd-card-content/`) and `GET /` returns it.
 
 ## Limitations
 
