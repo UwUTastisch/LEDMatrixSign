@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: LEDMatrixSign API
-  version: "2.0.1"
+  version: "2.1.0"
   description: |
     REST API of the LEDMatrixSign 2.0 firmware (`feature/2.0-compositor`):
     framebuffer, animations, files and display settings.
@@ -64,12 +64,36 @@ info:
 
     # Parameters
 
-    Text in `text` and `scrolling_text` may contain `{name}` placeholders.
-    They are substituted from the animation's `default_params` merged with the
-    `params` given to `/anim/start` (or to `load_anim`). A placeholder with no
-    value is left in the text literally, braces included. Parameters do not
-    reach the `api` layer: placeholders sent to `/framebuffer/draw` are always
-    rendered literally.
+    `{name}` placeholders are substituted from the animation's
+    `default_params` merged with the `params` given to `/anim/start` (or to
+    `load_anim`). They work in `text`, in `color`, and in an asset's `name`. A
+    placeholder with no value is left in the text literally, braces included.
+    Parameters do not reach the `api` layer: placeholders sent to
+    `/framebuffer/draw` are always rendered literally.
+
+    Values keep their JSON type. A number renders without trailing zeros (`7`
+    is `"7"`, `1.5` is `"1.5"`), a boolean renders as `true`/`false`, and a
+    string is used as-is.
+
+    ## Conditions
+
+    Every drawable takes an optional `visible`, which decides whether it is
+    drawn at all — one object that can be switched off, instead of two objects
+    where one is blanked. It is either a JSON boolean, or a string holding a
+    literal or a single `{param}` reference, optionally negated with a leading
+    `!`:
+
+        "visible": true            always drawn (the default)
+        "visible": "{is_tram}"     drawn when that parameter is true
+        "visible": "!{is_tram}"    drawn when it is false
+
+    A value counts as true unless it is `false`, an empty string, `0`, `no` or
+    `off` (case-insensitive). A parameter that was never set counts as false,
+    so a row nobody filled in stays dark rather than showing placeholders.
+
+    `visible` is resolved when the object is added to a layer, alongside the
+    text substitution, so it follows the parameters of the animation that
+    placed it.
 
     # Conventions
 
@@ -715,6 +739,17 @@ components:
       default: "5x7"
       example: "5x7"
 
+    Visible:
+      description: |
+        Whether the object is drawn: a boolean, or a string holding a literal
+        or one `{param}` reference, optionally negated with `!`. Resolved
+        against the animation's parameters when the object is placed.
+      oneOf:
+        - type: boolean
+        - type: string
+      default: true
+      example: "{is_tram}"
+
     Objname:
       type: string
       description: |
@@ -735,6 +770,7 @@ components:
         color: {$ref: '#/components/schemas/Color'}
         objname: {$ref: '#/components/schemas/Objname'}
 
+        visible: {$ref: '#/components/schemas/Visible'}
     ScrollTextDrawable:
       type: object
       description: |
@@ -765,6 +801,7 @@ components:
           description: Any value other than `vertical` is treated as horizontal.
         objname: {$ref: '#/components/schemas/Objname'}
 
+        visible: {$ref: '#/components/schemas/Visible'}
     LineDrawable:
       type: object
       description: |
@@ -780,6 +817,7 @@ components:
         color: {$ref: '#/components/schemas/Color'}
         objname: {$ref: '#/components/schemas/Objname'}
 
+        visible: {$ref: '#/components/schemas/Visible'}
     RectangleDrawable:
       type: object
       description: |
@@ -799,6 +837,7 @@ components:
         color: {$ref: '#/components/schemas/Color'}
         objname: {$ref: '#/components/schemas/Objname'}
 
+        visible: {$ref: '#/components/schemas/Visible'}
     AssetDrawable:
       type: object
       description: |
@@ -828,6 +867,7 @@ components:
             a gradient is used.
         objname: {$ref: '#/components/schemas/Objname'}
 
+        visible: {$ref: '#/components/schemas/Visible'}
     ClearDirective:
       type: object
       description: |
@@ -874,7 +914,8 @@ components:
           description: Multiplies the parent's speed. 0 or less means 1.
         params:
           type: object
-          additionalProperties: {type: string}
+          additionalProperties:
+            oneOf: [{type: string}, {type: number}, {type: boolean}]
           description: Overrides the sub-animation's own default_params.
       required: [name]
 
@@ -948,8 +989,11 @@ components:
       properties:
         default_params:
           type: object
-          additionalProperties: {type: string}
-          description: Default values for the `{name}` placeholders in this document.
+          additionalProperties:
+            oneOf: [{type: string}, {type: number}, {type: boolean}]
+          description: |
+            Default values for this document's `{name}` placeholders and
+            `visible` conditions. Types are preserved.
         frames:
           type: array
           items: {$ref: '#/components/schemas/Frame'}
@@ -988,10 +1032,11 @@ components:
         params:
           type: object
           additionalProperties:
-            oneOf: [{type: string}, {type: number}]
+            oneOf: [{type: string}, {type: number}, {type: boolean}]
           description: |
-            Values for `{name}` placeholders, overriding the document's
-            `default_params`. Numbers become strings with two decimals.
+            Values for `{name}` placeholders and for `visible` conditions,
+            overriding the document's `default_params`. The JSON type is kept:
+            numbers render without trailing zeros, booleans as `true`/`false`.
       required: [animname]
 
     DisplayBrightnessRequest:

@@ -39,6 +39,8 @@ def is_valid_color(value) -> bool:
 def validate_color(value, where: str, warns: List[str]) -> None:
     if value is None:
         return
+    if isinstance(value, str) and "{" in value:
+        return  # a {param} reference, resolved at run time
     if not is_valid_color(value):
         # firmware falls back to white, so this is a warning not an error
         warns.append(f"{where}: color {value!r} is not #rgb/#rrggbb/#rrggbbaa "
@@ -122,6 +124,7 @@ def validate_frame(frame: dict, idx: int, assets_dir: str,
             errors.append(f"frame {idx}.{k}: must be an object")
             continue
         validate_color(obj.get("color"), f"frame {idx}.{k}", warns)
+        validate_visible(obj.get("visible"), f"frame {idx}.{k}", errors, warns)
         if k == "asset" and not obj.get("name"):
             errors.append(f"frame {idx}.asset: missing 'name'")
         if k == "asset":
@@ -154,6 +157,27 @@ def validate_frame(frame: dict, idx: int, assets_dir: str,
                     if not isinstance(ref, str) or not ref:
                         warns.append(f"frame {idx}.clear.obj: {ref!r} is not an "
                                      f"objname or 'f<frame>:<index>' handle")
+
+
+def validate_visible(value, where: str, errors: List[str], warns: List[str]) -> None:
+    """`visible` is a boolean, or a string holding a literal or one {param}
+    reference, optionally negated with '!' (src/anim/composition.h)."""
+    if value is None or isinstance(value, bool):
+        return
+    if not isinstance(value, str):
+        errors.append(f"{where}: visible must be a boolean or a string")
+        return
+    expr = value.strip().lstrip("!").strip()
+    if expr.startswith("{") and expr.endswith("}"):
+        if not expr[1:-1]:
+            errors.append(f"{where}: visible has an empty {{}} reference")
+        return
+    if "{" in expr or "}" in expr:
+        warns.append(f"{where}: visible {value!r} is not a single {{param}} "
+                     f"reference — it is compared as a literal string")
+    elif expr.lower() not in ("true", "false", "0", "1", "no", "off", "yes", "on", ""):
+        warns.append(f"{where}: visible {value!r} is a literal, so it is always "
+                     f"true — did you mean {{{expr}}}?")
 
 
 def check_asset_present(name, assets_dir: str, idx: int,

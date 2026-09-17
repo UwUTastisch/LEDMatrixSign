@@ -107,6 +107,14 @@ of the second frame) for use in `clear`.
 | `rectangle` | `x,y,dx,dy,border,color` | `border` 0 = filled, else outline thickness |
 | `asset` | `x,y,name,color` | draws `assets/<name>`, or `<animid>/<file>` for another animation's asset (required on the API overlay, which has no animation of its own); `color` tints monochrome assets |
 
+Every drawable also takes `objname` (a handle for `clear`) and `visible`
+(`true`/`false`, or `"{param}"`, optionally negated with `!`) — an object
+whose condition is false is skipped entirely.
+
+`{param}` placeholders work in `text`, in `color` and in an asset's `name`.
+Parameter values keep their JSON type: `7` renders as `7`, `1.5` as `1.5`,
+booleans as `true`/`false`, and booleans are what `visible` tests.
+
 `color` is `#rgb`, `#rrggbb`, `#rrggbbaa`, or
 `linear-gradient(<deg>deg, <stop>, <stop>, …)`. A malformed color falls back to
 white rather than failing.
@@ -161,6 +169,8 @@ All bodies are JSON unless noted. Errors return `{"error":"<reason>"}` with a 4x
 |--------|------|---------------|--------|
 | POST | `/anim/start` | `{animname, params?, cycles?}` | loads + plays `/anim/<animname>/`; `cycles` 0 = loop forever |
 | POST | `/anim/setspeed` | `{speed}` | global live speed multiplier |
+| POST | `/anim/pause` | — | hold the timeline; the current frame keeps its remaining time |
+| POST | `/anim/resume` | — | continue a paused animation |
 | POST | `/anim/stop` | — | stops and clears the primary layer |
 | GET | `/anim/status` | — | `{running,paused,speed,animname}` |
 

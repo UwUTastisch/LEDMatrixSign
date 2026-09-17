@@ -340,9 +340,7 @@ private:
                    if (!p.isNull())
                        for (JsonPairConst kv : p)
                            overrides[String(kv.key().c_str())] =
-                               kv.value().is<const char *>()
-                                   ? String(kv.value().as<const char *>())
-                                   : String(kv.value().as<float>());
+                               ParamValue::fromJson(kv.value());
 
                    {
                        CompositorGuard g(factory.lock);
@@ -372,6 +370,30 @@ private:
                   {
             { CompositorGuard g(factory.lock); factory.player.stop(factory.primary); }
             req->send(200, "application/json", "{\"status\":\"stopped\"}"); });
+
+        // POST /anim/pause — hold the timeline where it is
+        server.on("/anim/pause", HTTP_POST, [this](AsyncWebServerRequest *req)
+                  {
+            bool running;
+            {
+                CompositorGuard g(factory.lock);
+                running = factory.player.running();
+                if (running) factory.player.pause();
+            }
+            if (!running) { err(req, 409, "nothing playing"); return; }
+            req->send(200, "application/json", "{\"status\":\"paused\"}"); });
+
+        // POST /anim/resume
+        server.on("/anim/resume", HTTP_POST, [this](AsyncWebServerRequest *req)
+                  {
+            bool running;
+            {
+                CompositorGuard g(factory.lock);
+                running = factory.player.running();
+                if (running) factory.player.resume();
+            }
+            if (!running) { err(req, 409, "nothing playing"); return; }
+            req->send(200, "application/json", "{\"status\":\"running\"}"); });
 
         // GET /anim/status
         server.on("/anim/status", HTTP_GET, [this](AsyncWebServerRequest *req)

@@ -93,8 +93,23 @@ public:
 
     bool running() const { return !stack.empty(); }
     bool isPaused() const { return paused; }
-    void pause() { paused = true; }
-    void resume() { paused = false; }
+
+    // Pausing has to hold the *remaining* time of the current frame, not just
+    // stop calling tick(): millis() keeps running, so a plain flag would make
+    // the frame expire while paused and advance the moment playback resumes.
+    void pause()
+    {
+        if (paused) return;
+        paused = true;
+        pausedAtMs = lastNowMs;
+    }
+
+    void resume()
+    {
+        if (!paused) return;
+        paused = false;
+        if (waiting) frameDeadline += (lastNowMs - pausedAtMs);
+    }
     void setSpeedScale(float s) { userSpeed = (s > 0) ? s : 1.0f; }
     float speedScale() const { return userSpeed; }
     const String &currentId() const { return currentAnimId; }
@@ -104,6 +119,7 @@ public:
         stack.clear();
         primary.reset();
         waiting = false;
+        paused = false;
         currentAnimId = "";
     }
 
@@ -121,6 +137,7 @@ public:
         c.frameIdx = 0;
         stack.push_back(c);
         waiting = false;
+        paused = false;
         currentAnimId = anim->dir;
     }
 
@@ -128,7 +145,11 @@ public:
     // factory can rasterise with the right fallback context.
     void tick(unsigned long now, Layer &primary)
     {
-        if (paused || stack.empty()) return;
+        // Track the clock even while paused, so pause()/resume() can measure
+        // the standstill and shift the frame deadline by it.
+        if (paused) { lastNowMs = now; return; }
+        lastNowMs = now;
+        if (stack.empty()) return;
 
         if (waiting)
         {
@@ -221,6 +242,8 @@ private:
     AnimLoader loader;
     bool waiting = false;
     bool paused = false;
+    unsigned long lastNowMs = 0;  // most recent tick(), paused or not
+    unsigned long pausedAtMs = 0; // when pause() was called
     unsigned long frameDeadline = 0;
     float userSpeed = 1.0f; // live /anim/setspeed multiplier
     String currentAnimId;
@@ -309,8 +332,10 @@ public:
 
         player.tick(now, primary);
 
-        // advance animated objects on both layers
-        primary.advance(dt);
+        // Advance animated objects (scrolling text). The animation layer holds
+        // still while the player is paused; the overlay is not part of the
+        // timeline, so it keeps moving.
+        primary.advance(player.isPaused() ? 0.0f : dt);
         api.advance(dt);
 
         // rasterise

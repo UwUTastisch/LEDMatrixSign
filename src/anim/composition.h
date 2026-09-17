@@ -19,7 +19,74 @@
 #include "../gfx/framebuffer.h"
 #include "../gfx/asset.h"
 
-using Params = std::map<String, String>;
+// A parameter value keeps its JSON type. `text` always sees the canonical
+// string form; `visible` uses the truthiness below.
+struct ParamValue
+{
+    enum Kind { Str, Num, Bool } kind = Str;
+    String str;            // canonical text form
+    double num = 0;
+    bool flag = false;
+
+    ParamValue() {}
+    ParamValue(const String &v) : kind(Str), str(v) {}
+
+    static String formatNumber(double v)
+    {
+        // Whole numbers print without decimals: 7 stays "7", not "7.00".
+        // Whole values print as integers; Arduino's String has no long long
+        // constructor, so format explicitly.
+        if (v == (double)(long)v && v < 2e9 && v > -2e9)
+        {
+            char buf[24];
+            snprintf(buf, sizeof buf, "%ld", (long)v);
+            return String(buf);
+        }
+        String s = String((float)v, 3);
+        while (s.length() && s[s.length() - 1] == '0') s = s.substring(0, s.length() - 1);
+        if (s.length() && s[s.length() - 1] == '.') s = s.substring(0, s.length() - 1);
+        return s;
+    }
+
+    static ParamValue number(double v)
+    {
+        ParamValue p;
+        p.kind = Num; p.num = v; p.flag = (v != 0); p.str = formatNumber(v);
+        return p;
+    }
+    static ParamValue boolean(bool v)
+    {
+        ParamValue p;
+        p.kind = Bool; p.flag = v; p.num = v ? 1 : 0; p.str = v ? "true" : "false";
+        return p;
+    }
+    static ParamValue text(const String &v)
+    {
+        ParamValue p;
+        p.kind = Str; p.str = v;
+        // A string is false when it is empty or spells a "no" — so a feeder
+        // can send either JSON booleans or the strings it already has.
+        String t = v; t.trim(); t.toLowerCase();
+        p.flag = !(t.isEmpty() || t == "false" || t == "0" || t == "no" || t == "off");
+        p.num = v.toFloat();
+        return p;
+    }
+    static ParamValue fromJson(JsonVariantConst v)
+    {
+        if (v.is<bool>()) return boolean(v.as<bool>());
+        if (v.is<const char *>()) return text(String(v.as<const char *>()));
+        if (v.is<float>() || v.is<int>() || v.is<double>()) return number(v.as<double>());
+        return text(String(""));
+    }
+    void toJson(JsonObject o, const String &key) const
+    {
+        if (kind == Bool) o[key] = flag;
+        else if (kind == Num) o[key] = num;
+        else o[key] = str;
+    }
+};
+
+using Params = std::map<String, ParamValue>;
 
 // ——— {placeholder} substitution ———
 // Replace {key} with params[key]; if a key has no value (and no default was
@@ -40,7 +107,7 @@ inline String substituteParams(const String &tmpl, const Params &params)
                 String key = tmpl.substring(i + 1, close);
                 auto it = params.find(key);
                 if (it != params.end())
-                    out += it->second;          // substitute
+                    out += it->second.str;      // substitute
                 else
                     out += tmpl.substring(i, close + 1); // ignore: keep literal
                 i = close + 1;
@@ -51,6 +118,32 @@ inline String substituteParams(const String &tmpl, const Params &params)
         i++;
     }
     return out;
+}
+
+// Evaluate a `visible` expression: empty means visible, a leading '!' negates,
+// and the rest is either a literal or a single {param} reference. Anything
+// unresolved counts as false, so a row whose parameter was never sent stays
+// dark rather than showing a stray placeholder.
+inline bool evalVisible(const String &expr, const Params &params)
+{
+    if (expr.isEmpty()) return true;
+    String e = expr;
+    e.trim();
+    bool negate = false;
+    while (e.length() && e[0] == '!') { negate = !negate; e = e.substring(1); e.trim(); }
+
+    bool truth;
+    if (e.length() > 2 && e[0] == '{' && e[e.length() - 1] == '}')
+    {
+        String key = e.substring(1, e.length() - 1);
+        auto it = params.find(key);
+        truth = (it != params.end()) ? it->second.flag : false;
+    }
+    else
+    {
+        truth = ParamValue::text(e).flag;
+    }
+    return negate ? !truth : truth;
 }
 
 // Render-time environment handed to each object.
@@ -76,6 +169,10 @@ class CObj
 public:
     String id;      // "frame:index", both 1-based, e.g. "1:2"
     String objname; // optional user handle
+    // "" = always drawn. Otherwise a literal or {param}, optionally negated
+    // with '!', resolved at bind() time.
+    String visibleExpr;
+    bool visible = true;
     virtual ~CObj() {}
     virtual const char *type() const = 0;
     virtual void render(RenderEnv &env) = 0;
@@ -83,7 +180,30 @@ public:
     // Freeze param substitution / asset path against the context active when
     // this object is added to a layer, so it stays correct even after a nested
     // sub-animation switches params or directory.
-    virtual void bind(const Params & /*params*/, const String & /*animDir*/) {}
+    virtual void bind(const Params &params, const String & /*animDir*/)
+    {
+        visible = evalVisible(visibleExpr, params);
+    }
+
+    // A colour may contain {param} references; when it does, the spec is
+    // re-parsed at bind() time. Objects that don't use one pay nothing.
+    void bindColor(const Params &params, const String &tmpl, ColorSpec &out) const
+    {
+        if (tmpl.indexOf('{') < 0) return;
+        out = ColorSpec::parse(substituteParams(tmpl, params));
+    }
+
+    // Shared serialisation of the fields every drawable has.
+    void commonToJson(JsonObject o) const
+    {
+        if (objname.length()) o["objname"] = objname;
+        if (visibleExpr.length()) o["visible"] = visibleExpr;
+    }
+
+    bool commonEquals(const CObj &other) const
+    {
+        return objname == other.objname && visibleExpr == other.visibleExpr;
+    }
     virtual void toJson(JsonObject frameObj) = 0; // re-emit into a frame object
     // Structural equality test (ignore `id`). Used to avoid duplicate
     // stacking when re-applying frames that already exist in a layer.
@@ -105,14 +225,18 @@ public:
     int x = 0, y = 0;
     String tmpl, fontName = "5x7";
     ColorSpec color;
+    String colorTmpl;
     String bound; bool isBound = false;
     const char *type() const override { return "text"; }
-    void bind(const Params &p, const String &) override
+    void bind(const Params &p, const String &dir) override
     {
+        CObj::bind(p, dir);
         bound = substituteParams(tmpl, p); isBound = true;
+        bindColor(p, colorTmpl, color);
     }
     void render(RenderEnv &env) override
     {
+        if (!visible) return;
         String s = isBound ? bound : substituteParams(tmpl, env.params);
         env.fb.text(Fonts::byName(fontName), s, (long long)x, (long long)y, color);
     }
@@ -120,15 +244,16 @@ public:
     {
         JsonObject o = addDrawableJsonObject(f, "text");
         o["x"] = x; o["y"] = y; o["text"] = tmpl; o["font"] = fontName;
-        if (objname.length()) o["objname"] = objname;
-        o["color"] = color.toString();
+        commonToJson(o);
+        o["color"] = colorTmpl.length() ? colorTmpl : color.toString();
     }
     bool equals(const CObj &other) const override
     {
         if (other.type() != type()) return false;
         const TextObj &o = static_cast<const TextObj &>(other);
         return x == o.x && y == o.y && tmpl == o.tmpl && fontName == o.fontName &&
-               objname == o.objname && color.toString() == o.color.toString();
+               commonEquals(other) && colorTmpl == o.colorTmpl &&
+               color.toString() == o.color.toString();
     }
 };
 
@@ -142,18 +267,22 @@ public:
     float speed = 0;       // px/s
     bool horizontal = true;
     float phase = 0;       // px scrolled so far
+    String colorTmpl;
     String bound; bool isBound = false;
 
     const char *type() const override { return "scrolling_text"; }
 
     void advance(float dt) override { phase += speed * dt; }
-    void bind(const Params &p, const String &) override
+    void bind(const Params &p, const String &dir) override
     {
+        CObj::bind(p, dir);
         bound = substituteParams(tmpl, p); isBound = true;
+        bindColor(p, colorTmpl, color);
     }
 
     void render(RenderEnv &env) override
     {
+        if (!visible) return;
         const Font &font = Fonts::byName(fontName);
         String s = isBound ? bound : substituteParams(tmpl, env.params);
         int textW = font.measure(s);
@@ -214,8 +343,8 @@ public:
         o["x"] = x; o["y"] = y; o["dx"] = dx; o["dy"] = dy;
         o["text"] = tmpl; o["font"] = fontName; o["scroll_speed"] = speed;
         o["scroll_direction"] = horizontal ? "horizontal" : "vertical";
-        if (objname.length()) o["objname"] = objname;
-        o["color"] = color.toString();
+        commonToJson(o);
+        o["color"] = colorTmpl.length() ? colorTmpl : color.toString();
     }
     bool equals(const CObj &other) const override
     {
@@ -223,7 +352,8 @@ public:
         const ScrollTextObj &o = static_cast<const ScrollTextObj &>(other);
         return x == o.x && y == o.y && dx == o.dx && dy == o.dy && tmpl == o.tmpl &&
                fontName == o.fontName && speed == o.speed && horizontal == o.horizontal &&
-               objname == o.objname && color.toString() == o.color.toString();
+               commonEquals(other) && colorTmpl == o.colorTmpl &&
+               color.toString() == o.color.toString();
     }
 };
 
@@ -231,11 +361,18 @@ public:
 class LineObj : public CObj
 {
 public:
+    String colorTmpl;
     int x = 0, y = 0, dx = 0, dy = 0, thickness = 1;
     ColorSpec color;
     const char *type() const override { return "line"; }
+    void bind(const Params &p, const String &dir) override
+    {
+        CObj::bind(p, dir);
+        bindColor(p, colorTmpl, color);
+    }
     void render(RenderEnv &env) override
     {
+        if (!visible) return;
         // 64-bit so x + dx cannot overflow; FrameBuffer::line clips and caps.
         env.fb.line((long long)x, (long long)y,
                     (long long)x + dx, (long long)y + dy, thickness, color);
@@ -245,15 +382,16 @@ public:
         JsonObject o = addDrawableJsonObject(f, "line");
         o["x"] = x; o["y"] = y; o["dx"] = dx; o["dy"] = dy;
         o["thickness"] = thickness;
-        if (objname.length()) o["objname"] = objname;
-        o["color"] = color.toString();
+        commonToJson(o);
+        o["color"] = colorTmpl.length() ? colorTmpl : color.toString();
     }
     bool equals(const CObj &other) const override
     {
         if (other.type() != type()) return false;
         const LineObj &o = static_cast<const LineObj &>(other);
         return x == o.x && y == o.y && dx == o.dx && dy == o.dy && thickness == o.thickness &&
-               objname == o.objname && color.toString() == o.color.toString();
+               commonEquals(other) && colorTmpl == o.colorTmpl &&
+               color.toString() == o.color.toString();
     }
 };
 
@@ -261,11 +399,18 @@ public:
 class RectObj : public CObj
 {
 public:
+    String colorTmpl;
     int x = 0, y = 0, dx = 0, dy = 0, border = 0;
     ColorSpec color;
     const char *type() const override { return "rectangle"; }
+    void bind(const Params &p, const String &dir) override
+    {
+        CObj::bind(p, dir);
+        bindColor(p, colorTmpl, color);
+    }
     void render(RenderEnv &env) override
     {
+        if (!visible) return;
         env.fb.rect((long long)x, (long long)y, (long long)dx, (long long)dy,
                     (long long)border, color);
     }
@@ -273,15 +418,16 @@ public:
     {
         JsonObject o = addDrawableJsonObject(f, "rectangle");
         o["x"] = x; o["y"] = y; o["dx"] = dx; o["dy"] = dy; o["border"] = border;
-        if (objname.length()) o["objname"] = objname;
-        o["color"] = color.toString();
+        commonToJson(o);
+        o["color"] = colorTmpl.length() ? colorTmpl : color.toString();
     }
     bool equals(const CObj &other) const override
     {
         if (other.type() != type()) return false;
         const RectObj &o = static_cast<const RectObj &>(other);
         return x == o.x && y == o.y && dx == o.dx && dy == o.dy && border == o.border &&
-               objname == o.objname && color.toString() == o.color.toString();
+               commonEquals(other) && colorTmpl == o.colorTmpl &&
+               color.toString() == o.color.toString();
     }
 };
 
@@ -308,14 +454,25 @@ public:
     String name;
     bool hasTint = false;
     Rgba tint;
+    String tintTmpl;
     String boundPath;
     const char *type() const override { return "asset"; }
-    void bind(const Params &, const String &animDir) override
+    void bind(const Params &p, const String &animDir) override
     {
-        boundPath = resolveAssetPath(name, animDir);
+        CObj::bind(p, animDir);
+        // The file name may itself contain {param}, so one asset object can
+        // show a different bitmap per run.
+        boundPath = resolveAssetPath(
+            name.indexOf('{') >= 0 ? substituteParams(name, p) : name, animDir);
+        if (hasTint && tintTmpl.indexOf('{') >= 0)
+        {
+            ColorSpec cs = ColorSpec::parse(substituteParams(tintTmpl, p));
+            tint = cs.stops.empty() ? Rgba(255, 255, 255) : cs.stops[0];
+        }
     }
     void render(RenderEnv &env) override
     {
+        if (!visible) return;
         String path = boundPath.length() ? boundPath
                                           : resolveAssetPath(name, env.animDir);
         Asset a = AssetLoader::load(path);
@@ -330,14 +487,14 @@ public:
     {
         JsonObject o = addDrawableJsonObject(f, "asset");
         o["x"] = x; o["y"] = y; o["name"] = name;
-        if (objname.length()) o["objname"] = objname;
-        if (hasTint) o["color"] = ColorSpec::solid(tint).toString();
+        commonToJson(o);
+        if (hasTint) o["color"] = tintTmpl.length() ? tintTmpl : ColorSpec::solid(tint).toString();
     }
     bool equals(const CObj &other) const override
     {
         if (other.type() != type()) return false;
         const AssetObj &o = static_cast<const AssetObj &>(other);
-        if (x != o.x || y != o.y || name != o.name || objname != o.objname) return false;
+        if (x != o.x || y != o.y || name != o.name || !commonEquals(other)) return false;
         if (hasTint != o.hasTint) return false;
         if (hasTint && (tint.r != o.tint.r || tint.g != o.tint.g || tint.b != o.tint.b || tint.a != o.tint.a))
             return false;
@@ -399,6 +556,25 @@ inline ColorSpec parseColorVar(JsonVariantConst v)
     return ColorSpec(); // default white
 }
 
+// Keep the raw colour string when it references a parameter, so bind() can
+// re-resolve it per run.
+inline String colorTemplate(JsonVariantConst v)
+{
+    if (!v.is<const char *>()) return String("");
+    String raw = (const char *)v;
+    return raw.indexOf('{') >= 0 ? raw : String("");
+}
+
+inline void parseCommonFields(JsonObjectConst o, CObj &obj)
+{
+    if (o["objname"].is<const char *>()) obj.objname = (const char *)o["objname"];
+    JsonVariantConst vis = o["visible"];
+    if (vis.is<bool>()) obj.visibleExpr = vis.as<bool>() ? String("") : String("false");
+    else if (vis.is<const char *>()) obj.visibleExpr = String((const char *)vis);
+    obj.visible = obj.visibleExpr.isEmpty();
+    if (!obj.visible) obj.visible = evalVisible(obj.visibleExpr, Params());
+}
+
 inline std::shared_ptr<CObj> parseDrawableObj(const String &key, JsonObjectConst o,
                                               const String &id)
 {
@@ -409,7 +585,8 @@ inline std::shared_ptr<CObj> parseDrawableObj(const String &key, JsonObjectConst
         t->tmpl = (const char *)(o["text"] | "");
         t->fontName = (const char *)(o["font"] | "5x7");
         t->color = parseColorVar(o["color"]);
-        if (o["objname"].is<const char *>()) t->objname = (const char *)o["objname"];
+        t->colorTmpl = colorTemplate(o["color"]);
+        parseCommonFields(o, *t);
         return t;
     }
     if (key == "scrolling_text")
@@ -421,9 +598,10 @@ inline std::shared_ptr<CObj> parseDrawableObj(const String &key, JsonObjectConst
         t->fontName = (const char *)(o["font"] | "5x7");
         t->color = parseColorVar(o["color"]);
         t->speed = o["scroll_speed"] | 0.0f;
+        t->colorTmpl = colorTemplate(o["color"]);
         String dir = (const char *)(o["scroll_direction"] | "horizontal");
         t->horizontal = !(dir == "vertical");
-        if (o["objname"].is<const char *>()) t->objname = (const char *)o["objname"];
+        parseCommonFields(o, *t);
         return t;
     }
     if (key == "line")
@@ -433,7 +611,8 @@ inline std::shared_ptr<CObj> parseDrawableObj(const String &key, JsonObjectConst
         l->dx = o["dx"] | 0; l->dy = o["dy"] | 0;
         l->thickness = o["thickness"] | 1;
         l->color = parseColorVar(o["color"]);
-        if (o["objname"].is<const char *>()) l->objname = (const char *)o["objname"];
+        l->colorTmpl = colorTemplate(o["color"]);
+        parseCommonFields(o, *l);
         return l;
     }
     if (key == "rectangle")
@@ -443,7 +622,8 @@ inline std::shared_ptr<CObj> parseDrawableObj(const String &key, JsonObjectConst
         r->dx = o["dx"] | 0; r->dy = o["dy"] | 0;
         r->border = o["border"] | 0;
         r->color = parseColorVar(o["color"]);
-        if (o["objname"].is<const char *>()) r->objname = (const char *)o["objname"];
+        r->colorTmpl = colorTemplate(o["color"]);
+        parseCommonFields(o, *r);
         return r;
     }
     if (key == "asset")
@@ -456,8 +636,9 @@ inline std::shared_ptr<CObj> parseDrawableObj(const String &key, JsonObjectConst
             ColorSpec cs = ColorSpec::parse((const char *)o["color"]);
             a->hasTint = true;
             a->tint = cs.stops.empty() ? Rgba(255, 255, 255) : cs.stops[0];
+            a->tintTmpl = colorTemplate(o["color"]);
         }
-        if (o["objname"].is<const char *>()) a->objname = (const char *)o["objname"];
+        parseCommonFields(o, *a);
         return a;
     }
     return nullptr;
@@ -521,10 +702,7 @@ inline Frame parseFrameObject(JsonObjectConst fo, int frameNo)
             JsonObjectConst lp = lo["params"];
             if (!lp.isNull())
                 for (JsonPairConst pkv : lp)
-                    ld.params[String(pkv.key().c_str())] =
-                        pkv.value().is<const char *>()
-                            ? String(pkv.value().as<const char *>())
-                            : String(pkv.value().as<float>());
+                    ld.params[String(pkv.key().c_str())] = ParamValue::fromJson(pkv.value());
             frame.loads.push_back(ld);
             continue;
         }
@@ -560,9 +738,7 @@ inline bool Animation::parse(JsonObjectConst root, const String &animDir)
     JsonObjectConst dp = root["default_params"];
     if (!dp.isNull())
         for (JsonPairConst kv : dp)
-            defaultParams[String(kv.key().c_str())] =
-                kv.value().is<const char *>() ? String(kv.value().as<const char *>())
-                                              : String(kv.value().as<float>());
+            defaultParams[String(kv.key().c_str())] = ParamValue::fromJson(kv.value());
 
     JsonArrayConst arr = root["frames"];
     if (arr.isNull()) return false;
@@ -579,7 +755,7 @@ inline bool Animation::parse(JsonObjectConst root, const String &animDir)
 inline void Animation::serialize(JsonObject root) const
 {
     JsonObject dp = root["default_params"].to<JsonObject>();
-    for (auto &kv : defaultParams) dp[kv.first] = kv.second;
+    for (auto &kv : defaultParams) kv.second.toJson(dp, kv.first);
 
     JsonArray arr = root["frames"].to<JsonArray>();
     for (const Frame &f : frames)
@@ -600,7 +776,7 @@ inline void Animation::serialize(JsonObject root) const
             JsonObject lo = fo["load_anim"].to<JsonObject>();
             lo["name"] = l.name; lo["cycles"] = l.cycles; lo["speed"] = l.speed;
             JsonObject lp = lo["params"].to<JsonObject>();
-            for (auto &kv : l.params) lp[kv.first] = kv.second;
+            for (auto &kv : l.params) kv.second.toJson(lp, kv.first);
         }
         if (f.duration) fo["duration"] = f.duration;
     }
