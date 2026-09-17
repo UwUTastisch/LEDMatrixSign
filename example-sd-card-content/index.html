@@ -4003,14 +4003,24 @@ function convertAsset(ref, asset) {
 
 // Decode any browser-readable image (or BMP) into RGBA, optionally shrunk to
 // fit the matrix.
-// The firmware buffers an upload body in RAM (64 KB cap) and refuses to
-// decode a BMP over 512 KB, so an image is shrunk to fit both before it goes
-// out. Sending a full-resolution photo used to reboot the sign.
-const MAX_ASSET_BYTES = 44000; // 44 KB of BMP ≈ 59 KB of base64 body
+// The firmware buffers an upload body in RAM, and base64 inflates a bitmap by
+// a third, so the ceiling here is deliberately well under the device's 64 KB
+// body cap. An ESP32-C3 has far less heap to spare than an S3, and a
+// contiguous 59 KB allocation is not something to count on.
+//
+// A full-panel asset is always allowed; beyond that the limit is 24 KB of
+// bitmap (about 32 KB of request body).
+const MIN_ASSET_BUDGET = 24000;
+const MAX_ASSET_BYTES_CEILING = 44000;
 const MAX_ASSET_DIM = 4096;
 
+function assetByteBudget() {
+  const panel = state.width * state.height * 4 + 54;
+  return clamp(panel, MIN_ASSET_BUDGET, MAX_ASSET_BYTES_CEILING);
+}
+
 function assetByteLimitSize(w, h) {
-  const budget = Math.floor((MAX_ASSET_BYTES - 54) / 4);
+  const budget = Math.floor((assetByteBudget() - 54) / 4);
   if (w * h <= budget && w <= MAX_ASSET_DIM && h <= MAX_ASSET_DIM) return null;
   const scale = Math.min(Math.sqrt(budget / (w * h)), MAX_ASSET_DIM / w, MAX_ASSET_DIM / h);
   return { w: Math.max(1, Math.floor(w * scale)), h: Math.max(1, Math.floor(h * scale)) };
@@ -4381,8 +4391,8 @@ function renderAssetEditor() {
   const note = $('aeSizeNote');
   const bytes = 54 + w * h * 4;
   note.textContent = `${w} × ${h} — ${formatBytes(bytes)}`;
-  note.classList.toggle('warn', bytes > MAX_ASSET_BYTES);
-  if (bytes > MAX_ASSET_BYTES) note.textContent += ' — too large for the sign';
+  note.classList.toggle('warn', bytes > assetByteBudget());
+  if (bytes > assetByteBudget()) note.textContent += ' — too large for the sign';
 }
 
 // ---------- palette + colour ----------
@@ -4692,8 +4702,8 @@ function saveAssetFromEditor() {
     return;
   }
   const bytes = 54 + assetEditor.w * assetEditor.h * 4;
-  if (bytes > MAX_ASSET_BYTES) {
-    toast(`${assetEditor.w} × ${assetEditor.h} is ${formatBytes(bytes)}; the sign accepts up to ${formatBytes(MAX_ASSET_BYTES)}. Shrink it or trim the edges.`, 'error');
+  if (bytes > assetByteBudget()) {
+    toast(`${assetEditor.w} × ${assetEditor.h} is ${formatBytes(bytes)}; this sign accepts up to ${formatBytes(assetByteBudget())} per asset. Shrink it or trim the edges.`, 'error');
     return;
   }
   const file = sanitizeFileName($('assetNameInput').value, 'custom_asset');

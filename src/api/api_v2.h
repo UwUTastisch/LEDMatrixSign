@@ -163,46 +163,92 @@ private:
         // GET /framebuffer/get — composited output as base64 BGRA8888
         server.on("/framebuffer/get", HTTP_GET, [this](AsyncWebServerRequest *req)
                   {
-            // Snapshot the pixels under the lock (loop() writes factory.out
-            // every frame), then encode and stream without holding it.
-            int w, h;
-            std::vector<uint8_t> raw;
+            // Snapshot the pixels under the lock (loop() rewrites factory.out
+            // every frame) and hand the snapshot to the response.
+            //
+            // The body is produced by a filler callback, which the server asks
+            // for bytes a packet at a time. An AsyncResponseStream would have
+            // been simpler, but it collects the *whole* body in a growable
+            // cbuf and reallocates as it grows — on a C3 that fails with
+            // "cbuf resize(): failed to allocate temporary buffer" long before
+            // the frame is sent. With a filler, peak memory is the snapshot
+            // plus one TCP buffer.
+            struct Shot
+            {
+                int w = 0, h = 0;
+                String head;
+                std::vector<uint8_t> px; // BGRA, exactly as sent
+            };
+            auto shot = std::make_shared<Shot>();
             {
                 CompositorGuard g(factory.lock);
                 const FrameBuffer &fb = factory.out;
-                w = fb.w; h = fb.h;
-                raw.resize((size_t)w * h * 4);
-                for (size_t i = 0; i < fb.px.size(); i++) {
-                    const Rgba &c = fb.px[i];
-                    raw[i*4+0]=c.b; raw[i*4+1]=c.g; raw[i*4+2]=c.r; raw[i*4+3]=c.a;
-                }
+                shot->w = fb.w;
+                shot->h = fb.h;
+                shot->px.resize((size_t)fb.w * fb.h * 4);
+                if (shot->px.size() == (size_t)fb.w * fb.h * 4)
+                    for (size_t i = 0; i < fb.px.size(); i++)
+                    {
+                        const Rgba &c = fb.px[i];
+                        shot->px[i * 4 + 0] = c.b;
+                        shot->px[i * 4 + 1] = c.g;
+                        shot->px[i * 4 + 2] = c.r;
+                        shot->px[i * 4 + 3] = c.a;
+                    }
             }
-            // Base64 straight into the response stream. The old version held
-            // the raw bytes, the encoded string, a JsonDocument copy and the
-            // serialised body all at once — on a 128x64 panel that is ~200 KB
-            // of heap for one request, which is more than an ESP32 can spare.
-            static const char *b64 =
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            AsyncResponseStream *res = req->beginResponseStream("application/json");
-            res->printf("{\"width\":%d,\"height\":%d,\"format\":\"BGRA8888\",\"data\":\"",
-                        w, h);
-            char chunk[257];
-            size_t out = 0;
-            for (size_t i = 0; i < raw.size(); i += 3)
+            if (shot->px.size() != (size_t)shot->w * shot->h * 4)
             {
-                uint32_t v = (uint32_t)raw[i] << 16;
-                size_t have = raw.size() - i;
-                if (have > 1) v |= (uint32_t)raw[i+1] << 8;
-                if (have > 2) v |= raw[i+2];
-                chunk[out++] = b64[(v >> 18) & 63];
-                chunk[out++] = b64[(v >> 12) & 63];
-                chunk[out++] = have > 1 ? b64[(v >> 6) & 63] : '=';
-                chunk[out++] = have > 2 ? b64[v & 63] : '=';
-                if (out >= 252) { chunk[out] = '\0'; res->print(chunk); out = 0; }
+                err(req, 503, "out of memory for a frame snapshot");
+                return;
             }
-            if (out) { chunk[out] = '\0'; res->print(chunk); }
-            res->print("\"}");
-            req->send(res); });
+
+            shot->head = String("{\"width\":") + shot->w + ",\"height\":" + shot->h +
+                         ",\"format\":\"BGRA8888\",\"data\":\"";
+            const size_t headLen = shot->head.length();
+            const size_t b64Len = 4 * ((shot->px.size() + 2) / 3);
+            const size_t tailLen = 2; // closing quote and brace
+            const size_t total = headLen + b64Len + tailLen;
+
+            req->send(req->beginResponse(
+                "application/json", total,
+                [shot, headLen, b64Len, total](uint8_t *buf, size_t maxLen, size_t index) -> size_t
+                {
+                    static const char *b64 =
+                        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                    size_t written = 0;
+                    size_t pos = index;
+                    while (written < maxLen && pos < total)
+                    {
+                        if (pos < headLen)
+                        {
+                            buf[written++] = (uint8_t)shot->head[pos++];
+                            continue;
+                        }
+                        if (pos < headLen + b64Len)
+                        {
+                            // Every base64 character is a pure function of its
+                            // position, so the callback needs no cursor state.
+                            size_t c = pos - headLen;
+                            size_t group = c / 4, k = c % 4;
+                            size_t i = group * 3;
+                            size_t have = shot->px.size() - i;
+                            uint32_t v = (uint32_t)shot->px[i] << 16;
+                            if (have > 1) v |= (uint32_t)shot->px[i + 1] << 8;
+                            if (have > 2) v |= shot->px[i + 2];
+                            char ch;
+                            if (k == 0)      ch = b64[(v >> 18) & 63];
+                            else if (k == 1) ch = b64[(v >> 12) & 63];
+                            else if (k == 2) ch = have > 1 ? b64[(v >> 6) & 63] : '=';
+                            else             ch = have > 2 ? b64[v & 63] : '=';
+                            buf[written++] = (uint8_t)ch;
+                            pos++;
+                            continue;
+                        }
+                        buf[written++] = (uint8_t)(pos == total - 2 ? '"' : '}');
+                        pos++;
+                    }
+                    return written;
+                })); });
 
         // GET /framebuffer/getcomposition — live object trees of both layers
         server.on("/framebuffer/getcomposition", HTTP_GET,

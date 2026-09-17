@@ -246,6 +246,11 @@ paths:
         Brightness is applied by the panel driver and is *not* reflected here.
         Requesting this endpoint also advances the render clock, so polling it
         drives animation playback the same way the panel does.
+
+        The body is produced packet by packet rather than assembled in RAM, so
+        the only per-request cost is one snapshot of the panel
+        (`width * height * 4` bytes). If even that cannot be allocated the
+        answer is 503 rather than a half-written frame.
       responses:
         '200':
           description: Framebuffer contents
@@ -253,6 +258,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FramebufferGetResponse'
+        '503':
+          description: Not enough heap for a frame snapshot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Error'}
+              example: {error: "out of memory for a frame snapshot"}
 
   /framebuffer/getcomposition:
     get:
