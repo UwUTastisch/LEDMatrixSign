@@ -1,0 +1,357 @@
+{
+  "default_params": {
+    "station": "Station Name",
+    "bar_color": "#21353d",
+
+    "active1": true,
+    "active2": true,
+    "active3": true,
+    "active4": true,
+    "active5": true,
+
+    "type1": "tram",
+    "line1": "",
+    "dest1": "",
+    "scroll1": "",
+    "dep1": "",
+    "type2": "tram",
+    "line2": "",
+    "dest2": "",
+    "scroll2": "",
+    "dep2": "",
+    "type3": "tram",
+    "line3": "",
+    "dest3": "",
+    "scroll3": "",
+    "dep3": "",
+    "type4": "tram",
+    "line4": "",
+    "dest4": "",
+    "scroll4": "",
+    "dep4": "",
+    "type5": "tram",
+    "line5": "",
+    "dest5": "",
+    "scroll5": "",
+    "dep5": ""
+  },
+  "frames": [
+    { "clear": {} },
+    {
+      "drawables": [
+        {
+          "rectangle": {
+            "x": 0,
+            "y": 0,
+            "dx": 96,
+            "dy": 8,
+            "border": 0,
+            "color": "{bar_color}",
+            "objname": "bar_bg"
+          }
+        },
+        {
+          "text": {
+            "x": 2,
+            "y": 1,
+            "text": "{station}",
+            "font": "5x7",
+            "color": "#f0f0f0",
+            "objname": "bar_text"
+          }
+        },
+
+        {
+          "asset": {
+            "x": 1,
+            "y": 9,
+            "name": "icon_{type1}.bmp",
+            "objname": "r1_icon",
+            "visible": "{active1}"
+          }
+        },
+        {
+          "text": {
+            "x": 9,
+            "y": 9,
+            "text": "{line1}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r1_line",
+            "visible": "{active1}"
+          }
+        },
+        {
+          "text": {
+            "x": 21,
+            "y": 9,
+            "text": "{dest1}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r1_dest",
+            "visible": "{active1}"
+          }
+        },
+        {
+          "scrolling_text": {
+            "x": 21,
+            "y": 9,
+            "dx": 53,
+            "dy": 7,
+            "text": "{scroll1}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "scroll_speed": 9,
+            "scroll_direction": "horizontal",
+            "objname": "r1_scroll",
+            "visible": "{active1}"
+          }
+        },
+        {
+          "text": {
+            "x": 78,
+            "y": 9,
+            "text": "{dep1}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r1_dep",
+            "visible": "{active1}"
+          }
+        },
+
+        {
+          "asset": {
+            "x": 1,
+            "y": 17,
+            "name": "icon_{type2}.bmp",
+            "objname": "r2_icon",
+            "visible": "{active2}"
+          }
+        },
+        {
+          "text": {
+            "x": 9,
+            "y": 17,
+            "text": "{line2}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r2_line",
+            "visible": "{active2}"
+          }
+        },
+        {
+          "text": {
+            "x": 21,
+            "y": 17,
+            "text": "{dest2}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r2_dest",
+            "visible": "{active2}"
+          }
+        },
+        {
+          "scrolling_text": {
+            "x": 21,
+            "y": 17,
+            "dx": 53,
+            "dy": 7,
+            "text": "{scroll2}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "scroll_speed": 9,
+            "scroll_direction": "horizontal",
+            "objname": "r2_scroll",
+            "visible": "{active2}"
+          }
+        },
+        {
+          "text": {
+            "x": 78,
+            "y": 17,
+            "text": "{dep2}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r2_dep",
+            "visible": "{active2}"
+          }
+        },
+
+        {
+          "asset": {
+            "x": 1,
+            "y": 25,
+            "name": "icon_{type3}.bmp",
+            "objname": "r3_icon",
+            "visible": "{active3}"
+          }
+        },
+        {
+          "text": {
+            "x": 9,
+            "y": 25,
+            "text": "{line3}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r3_line",
+            "visible": "{active3}"
+          }
+        },
+        {
+          "text": {
+            "x": 21,
+            "y": 25,
+            "text": "{dest3}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r3_dest",
+            "visible": "{active3}"
+          }
+        },
+        {
+          "scrolling_text": {
+            "x": 21,
+            "y": 25,
+            "dx": 53,
+            "dy": 7,
+            "text": "{scroll3}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "scroll_speed": 9,
+            "scroll_direction": "horizontal",
+            "objname": "r3_scroll",
+            "visible": "{active3}"
+          }
+        },
+        {
+          "text": {
+            "x": 78,
+            "y": 25,
+            "text": "{dep3}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r3_dep",
+            "visible": "{active3}"
+          }
+        },
+
+        {
+          "asset": {
+            "x": 1,
+            "y": 33,
+            "name": "icon_{type4}.bmp",
+            "objname": "r4_icon",
+            "visible": "{active4}"
+          }
+        },
+        {
+          "text": {
+            "x": 9,
+            "y": 33,
+            "text": "{line4}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r4_line",
+            "visible": "{active4}"
+          }
+        },
+        {
+          "text": {
+            "x": 21,
+            "y": 33,
+            "text": "{dest4}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r4_dest",
+            "visible": "{active4}"
+          }
+        },
+        {
+          "scrolling_text": {
+            "x": 21,
+            "y": 33,
+            "dx": 53,
+            "dy": 7,
+            "text": "{scroll4}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "scroll_speed": 9,
+            "scroll_direction": "horizontal",
+            "objname": "r4_scroll",
+            "visible": "{active4}"
+          }
+        },
+        {
+          "text": {
+            "x": 78,
+            "y": 33,
+            "text": "{dep4}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r4_dep",
+            "visible": "{active4}"
+          }
+        },
+
+        {
+          "asset": {
+            "x": 1,
+            "y": 41,
+            "name": "icon_{type5}.bmp",
+            "objname": "r5_icon",
+            "visible": "{active5}"
+          }
+        },
+        {
+          "text": {
+            "x": 9,
+            "y": 41,
+            "text": "{line5}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r5_line",
+            "visible": "{active5}"
+          }
+        },
+        {
+          "text": {
+            "x": 21,
+            "y": 41,
+            "text": "{dest5}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r5_dest",
+            "visible": "{active5}"
+          }
+        },
+        {
+          "scrolling_text": {
+            "x": 21,
+            "y": 41,
+            "dx": 53,
+            "dy": 7,
+            "text": "{scroll5}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "scroll_speed": 9,
+            "scroll_direction": "horizontal",
+            "objname": "r5_scroll",
+            "visible": "{active5}"
+          }
+        },
+        {
+          "text": {
+            "x": 78,
+            "y": 41,
+            "text": "{dep5}",
+            "font": "5x7",
+            "color": "#c8c8c8",
+            "objname": "r5_dep",
+            "visible": "{active5}"
+          }
+        }
+      ],
+      "duration": 3600000
+    }
+  ]
+}
