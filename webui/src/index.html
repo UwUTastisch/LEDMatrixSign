@@ -212,6 +212,7 @@
               </label>
               <label class="check-field"><input id="assetFitMatrix" type="checkbox" checked /> Shrink images larger than the matrix</label>
               <p class="hint-text">Images are converted to the 32-bit BMP format the sign reads. Each asset belongs to one animation but can be drawn anywhere.</p>
+              <p class="hint-text">Paste an image with Ctrl+V (⌘V) or drop one here and it opens in the editor, scaled to fit — the quickest way to get a screenshot from your phone onto the sign.</p>
               <div id="assetList" class="asset-groups"></div>
             </section>
 
@@ -348,22 +349,65 @@
           <button class="icon-button" data-close-modal type="button" aria-label="Close">✕</button>
         </div>
         <div class="asset-editor-body">
-          <div class="asset-editor-tools">
-            <div class="segmented" role="group" aria-label="Brush">
-              <button id="aePen" class="active" type="button">Paint</button>
-              <button id="aeErase" type="button">Erase</button>
+          <div class="ae-toolbar">
+            <div class="tool-buttons ae-tools" role="group" aria-label="Tool">
+              <button class="ae-tool active" data-ae-tool="brush" type="button" title="Brush (B)">🖌</button>
+              <button class="ae-tool" data-ae-tool="eraser" type="button" title="Eraser (E)">🩹</button>
+              <button class="ae-tool" data-ae-tool="bucket" type="button" title="Fill (F)">🪣</button>
+              <button class="ae-tool" data-ae-tool="line" type="button" title="Line (L)">／</button>
+              <button class="ae-tool" data-ae-tool="rect" type="button" title="Rectangle (R)">▭</button>
+              <button class="ae-tool" data-ae-tool="picker" type="button" title="Pick a color (I)">💧</button>
             </div>
+            <label class="mini-field narrow"><span>Size</span><input id="aeBrushSize" type="number" min="1" max="16" value="1" /></label>
+            <div class="ae-history">
+              <button id="aeUndo" type="button" title="Undo (Ctrl+Z)" disabled>↺</button>
+              <button id="aeRedo" type="button" title="Redo (Ctrl+Shift+Z)" disabled>↻</button>
+            </div>
+          </div>
+
+          <div class="ae-color-row">
+            <div id="aePalette" class="ae-palette" role="group" aria-label="Palette"></div>
+            <div class="ae-color-controls">
+              <label class="mini-field"><span>Color</span><input id="aeColor" type="color" value="#ff0000" /></label>
+              <label class="mini-field"><span>Alpha</span>
+                <div class="range-inline">
+                  <input id="aeAlpha" type="range" min="0" max="255" value="255" />
+                  <strong id="aeAlphaValue">100%</strong>
+                </div>
+              </label>
+              <button id="aePaletteFromImage" type="button" title="Fill the palette with the colors in this asset">Palette from image</button>
+            </div>
+          </div>
+          <p class="hint-text">Click a slot to use it; shift-click a slot to overwrite it with the current color. Right-click the canvas to pick a color, middle-click to erase.</p>
+
+          <div id="aeStage" class="asset-editor-stage">
+            <canvas id="assetEditorCanvas" width="128" height="128"></canvas>
+            <div id="aeDropHint" class="ae-drop-hint">Drop or paste an image</div>
+          </div>
+
+          <div class="ae-import-row">
+            <label class="upload-button" for="aeImport">Import image…</label>
+            <input id="aeImport" type="file" accept="image/*,.bmp" hidden />
+            <label class="check-field"><input id="aeFitSign" type="checkbox" checked /> Shrink to the sign's size</label>
+            <label class="check-field"><input id="aeImportResize" type="checkbox" checked /> Resize the canvas to the image</label>
+            <label class="check-field"><input id="aeSmooth" type="checkbox" checked /> Smooth when shrinking</label>
+          </div>
+          <p class="hint-text">Paste with Ctrl+V (⌘V) anywhere on this page, or drop a file on the canvas — screenshots and photos from a phone work. They are shrunk to the sign's size, since a larger asset only wastes storage; untick that to keep more detail, up to what the sign can hold. Transparency is kept.</p>
+
+          <div class="ae-size-row">
             <label class="mini-field narrow"><span>Width</span><input id="aeWidth" type="number" min="1" max="128" value="16" /></label>
             <label class="mini-field narrow"><span>Height</span><input id="aeHeight" type="number" min="1" max="128" value="16" /></label>
+            <button id="aeFitMatrix" type="button" title="Match the sign's size">Match sign</button>
+            <button id="aeTrim" type="button" title="Crop away fully transparent edges">Trim</button>
             <button id="aeClear" type="button">Clear</button>
           </div>
-          <p class="hint-text">Paints with the color and opacity from the Draw tab. Erased pixels are transparent on the sign.</p>
-          <div class="asset-editor-stage"><canvas id="assetEditorCanvas" width="128" height="128"></canvas></div>
+
           <div class="two-col">
             <label class="mini-field"><span>Animation</span><input id="aeAnim" type="text" list="animIdList" autocomplete="off" spellcheck="false" /></label>
             <label class="mini-field"><span>File name</span><input id="assetNameInput" type="text" value="custom_asset" autocomplete="off" spellcheck="false" /></label>
           </div>
           <div class="footer-actions">
+            <span id="aeSizeNote" class="ae-size-note"></span>
             <button id="saveAssetButton" class="primary" type="button">Save asset</button>
           </div>
         </div>

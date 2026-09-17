@@ -1331,6 +1331,158 @@ a.link-button {
   touch-action: none;
 }
 
+
+/* ---------- Asset editor ---------- */
+
+.ae-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.ae-tools {
+  gap: 4px;
+}
+
+.ae-tools .ae-tool {
+  width: 34px;
+  height: 30px;
+  font-size: 0.95rem;
+}
+
+.ae-history {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.ae-history button {
+  width: 32px;
+  height: 30px;
+  padding: 0;
+}
+
+.ae-color-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 210px);
+  gap: 10px;
+  align-items: start;
+}
+
+.ae-palette {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+}
+
+.ae-swatch {
+  aspect-ratio: 1 / 1;
+  border-radius: 5px;
+  border: 1px solid var(--stroke);
+  padding: 0;
+  cursor: pointer;
+  background-clip: padding-box;
+}
+
+.ae-swatch.selected {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px rgba(119, 241, 208, 0.28);
+}
+
+.ae-color-controls {
+  display: grid;
+  gap: 6px;
+}
+
+.ae-color-controls button {
+  font-size: 0.72rem;
+}
+
+.ae-import-row,
+.ae-size-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ae-size-row .mini-field {
+  width: 72px;
+}
+
+.ae-size-row button {
+  height: 30px;
+}
+
+.ae-size-note {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ae-size-note.warn {
+  color: #ffc98a;
+}
+
+.asset-editor-stage {
+  position: relative;
+  max-height: min(46vh, 420px);
+}
+
+/* The editor is the tallest dialog: let its middle scroll so the name fields
+   and Save stay reachable on a laptop screen. */
+#assetEditorModal .modal-card {
+  display: flex;
+  flex-direction: column;
+  max-height: 92vh;
+  overflow: hidden;
+}
+
+#assetEditorModal .asset-editor-body {
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.asset-editor-stage.dropping {
+  border-color: var(--accent-2);
+  background: rgba(119, 241, 208, 0.06);
+}
+
+.ae-drop-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  color: var(--accent-2);
+  font-size: 0.82rem;
+  background: rgba(4, 12, 22, 0.6);
+  border-radius: 10px;
+  transition: opacity 120ms ease;
+}
+
+.asset-editor-stage.dropping .ae-drop-hint {
+  opacity: 1;
+}
+
+#assetEditorCanvas.picking {
+  cursor: crosshair;
+}
+
+.tab-panel.dropping {
+  outline: 2px dashed var(--accent-2);
+  outline-offset: -6px;
+  border-radius: 10px;
+}
+
+@media (max-width: 900px) {
+  .ae-color-row { grid-template-columns: 1fr; }
+  .ae-palette { grid-template-columns: repeat(10, 1fr); }
+}
+
 /* ---------- Toasts ---------- */
 
 .toast-host {

@@ -1338,6 +1338,158 @@ a.link-button {
   touch-action: none;
 }
 
+
+/* ---------- Asset editor ---------- */
+
+.ae-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+.ae-tools {
+  gap: 4px;
+}
+
+.ae-tools .ae-tool {
+  width: 34px;
+  height: 30px;
+  font-size: 0.95rem;
+}
+
+.ae-history {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.ae-history button {
+  width: 32px;
+  height: 30px;
+  padding: 0;
+}
+
+.ae-color-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 210px);
+  gap: 10px;
+  align-items: start;
+}
+
+.ae-palette {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 4px;
+}
+
+.ae-swatch {
+  aspect-ratio: 1 / 1;
+  border-radius: 5px;
+  border: 1px solid var(--stroke);
+  padding: 0;
+  cursor: pointer;
+  background-clip: padding-box;
+}
+
+.ae-swatch.selected {
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 2px rgba(119, 241, 208, 0.28);
+}
+
+.ae-color-controls {
+  display: grid;
+  gap: 6px;
+}
+
+.ae-color-controls button {
+  font-size: 0.72rem;
+}
+
+.ae-import-row,
+.ae-size-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ae-size-row .mini-field {
+  width: 72px;
+}
+
+.ae-size-row button {
+  height: 30px;
+}
+
+.ae-size-note {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ae-size-note.warn {
+  color: #ffc98a;
+}
+
+.asset-editor-stage {
+  position: relative;
+  max-height: min(46vh, 420px);
+}
+
+/* The editor is the tallest dialog: let its middle scroll so the name fields
+   and Save stay reachable on a laptop screen. */
+#assetEditorModal .modal-card {
+  display: flex;
+  flex-direction: column;
+  max-height: 92vh;
+  overflow: hidden;
+}
+
+#assetEditorModal .asset-editor-body {
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.asset-editor-stage.dropping {
+  border-color: var(--accent-2);
+  background: rgba(119, 241, 208, 0.06);
+}
+
+.ae-drop-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  color: var(--accent-2);
+  font-size: 0.82rem;
+  background: rgba(4, 12, 22, 0.6);
+  border-radius: 10px;
+  transition: opacity 120ms ease;
+}
+
+.asset-editor-stage.dropping .ae-drop-hint {
+  opacity: 1;
+}
+
+#assetEditorCanvas.picking {
+  cursor: crosshair;
+}
+
+.tab-panel.dropping {
+  outline: 2px dashed var(--accent-2);
+  outline-offset: -6px;
+  border-radius: 10px;
+}
+
+@media (max-width: 900px) {
+  .ae-color-row { grid-template-columns: 1fr; }
+  .ae-palette { grid-template-columns: repeat(10, 1fr); }
+}
+
 /* ---------- Toasts ---------- */
 
 .toast-host {
@@ -1633,6 +1785,7 @@ a.link-button {
               </label>
               <label class="check-field"><input id="assetFitMatrix" type="checkbox" checked /> Shrink images larger than the matrix</label>
               <p class="hint-text">Images are converted to the 32-bit BMP format the sign reads. Each asset belongs to one animation but can be drawn anywhere.</p>
+              <p class="hint-text">Paste an image with Ctrl+V (⌘V) or drop one here and it opens in the editor, scaled to fit — the quickest way to get a screenshot from your phone onto the sign.</p>
               <div id="assetList" class="asset-groups"></div>
             </section>
 
@@ -1769,22 +1922,65 @@ a.link-button {
           <button class="icon-button" data-close-modal type="button" aria-label="Close">✕</button>
         </div>
         <div class="asset-editor-body">
-          <div class="asset-editor-tools">
-            <div class="segmented" role="group" aria-label="Brush">
-              <button id="aePen" class="active" type="button">Paint</button>
-              <button id="aeErase" type="button">Erase</button>
+          <div class="ae-toolbar">
+            <div class="tool-buttons ae-tools" role="group" aria-label="Tool">
+              <button class="ae-tool active" data-ae-tool="brush" type="button" title="Brush (B)">🖌</button>
+              <button class="ae-tool" data-ae-tool="eraser" type="button" title="Eraser (E)">🩹</button>
+              <button class="ae-tool" data-ae-tool="bucket" type="button" title="Fill (F)">🪣</button>
+              <button class="ae-tool" data-ae-tool="line" type="button" title="Line (L)">／</button>
+              <button class="ae-tool" data-ae-tool="rect" type="button" title="Rectangle (R)">▭</button>
+              <button class="ae-tool" data-ae-tool="picker" type="button" title="Pick a color (I)">💧</button>
             </div>
+            <label class="mini-field narrow"><span>Size</span><input id="aeBrushSize" type="number" min="1" max="16" value="1" /></label>
+            <div class="ae-history">
+              <button id="aeUndo" type="button" title="Undo (Ctrl+Z)" disabled>↺</button>
+              <button id="aeRedo" type="button" title="Redo (Ctrl+Shift+Z)" disabled>↻</button>
+            </div>
+          </div>
+
+          <div class="ae-color-row">
+            <div id="aePalette" class="ae-palette" role="group" aria-label="Palette"></div>
+            <div class="ae-color-controls">
+              <label class="mini-field"><span>Color</span><input id="aeColor" type="color" value="#ff0000" /></label>
+              <label class="mini-field"><span>Alpha</span>
+                <div class="range-inline">
+                  <input id="aeAlpha" type="range" min="0" max="255" value="255" />
+                  <strong id="aeAlphaValue">100%</strong>
+                </div>
+              </label>
+              <button id="aePaletteFromImage" type="button" title="Fill the palette with the colors in this asset">Palette from image</button>
+            </div>
+          </div>
+          <p class="hint-text">Click a slot to use it; shift-click a slot to overwrite it with the current color. Right-click the canvas to pick a color, middle-click to erase.</p>
+
+          <div id="aeStage" class="asset-editor-stage">
+            <canvas id="assetEditorCanvas" width="128" height="128"></canvas>
+            <div id="aeDropHint" class="ae-drop-hint">Drop or paste an image</div>
+          </div>
+
+          <div class="ae-import-row">
+            <label class="upload-button" for="aeImport">Import image…</label>
+            <input id="aeImport" type="file" accept="image/*,.bmp" hidden />
+            <label class="check-field"><input id="aeFitSign" type="checkbox" checked /> Shrink to the sign's size</label>
+            <label class="check-field"><input id="aeImportResize" type="checkbox" checked /> Resize the canvas to the image</label>
+            <label class="check-field"><input id="aeSmooth" type="checkbox" checked /> Smooth when shrinking</label>
+          </div>
+          <p class="hint-text">Paste with Ctrl+V (⌘V) anywhere on this page, or drop a file on the canvas — screenshots and photos from a phone work. They are shrunk to the sign's size, since a larger asset only wastes storage; untick that to keep more detail, up to what the sign can hold. Transparency is kept.</p>
+
+          <div class="ae-size-row">
             <label class="mini-field narrow"><span>Width</span><input id="aeWidth" type="number" min="1" max="128" value="16" /></label>
             <label class="mini-field narrow"><span>Height</span><input id="aeHeight" type="number" min="1" max="128" value="16" /></label>
+            <button id="aeFitMatrix" type="button" title="Match the sign's size">Match sign</button>
+            <button id="aeTrim" type="button" title="Crop away fully transparent edges">Trim</button>
             <button id="aeClear" type="button">Clear</button>
           </div>
-          <p class="hint-text">Paints with the color and opacity from the Draw tab. Erased pixels are transparent on the sign.</p>
-          <div class="asset-editor-stage"><canvas id="assetEditorCanvas" width="128" height="128"></canvas></div>
+
           <div class="two-col">
             <label class="mini-field"><span>Animation</span><input id="aeAnim" type="text" list="animIdList" autocomplete="off" spellcheck="false" /></label>
             <label class="mini-field"><span>File name</span><input id="assetNameInput" type="text" value="custom_asset" autocomplete="off" spellcheck="false" /></label>
           </div>
           <div class="footer-actions">
+            <span id="aeSizeNote" class="ae-size-note"></span>
             <button id="saveAssetButton" class="primary" type="button">Save asset</button>
           </div>
         </div>
@@ -3909,7 +4105,184 @@ async function uploadAssetFiles(files) {
 // Asset editor
 // =====================================================================
 
-const assetEditor = { w: 16, h: 16, px: new Uint8ClampedArray(16 * 16 * 4), erase: false, painting: false, cell: 12 };
+// A 32-bit RGBA pixel editor. Everything here is full-colour with alpha; the
+// sign's asset format is BGRA8888, so nothing is quantised on the way out.
+
+const AE_PALETTE_SLOTS = 20;
+const AE_DEFAULT_PALETTE = [
+  '#000000', '#ffffff', '#ff0000', '#ff8800', '#ffff00', '#88ff00',
+  '#00ff00', '#00ff88', '#00ffff', '#0088ff', '#0000ff', '#8800ff',
+  '#ff00ff', '#ff0088', '#884400', '#888888', '#444444', '#ffccaa',
+  '#224466', '#113322',
+];
+
+const assetEditor = {
+  w: 16,
+  h: 16,
+  px: new Uint8ClampedArray(16 * 16 * 4),
+  tool: 'brush',
+  size: 1,
+  color: { r: 255, g: 0, b: 0 },
+  alpha: 255,
+  palette: AE_DEFAULT_PALETTE.slice(),
+  paletteIndex: 2,
+  cell: 12,
+  stroke: null, // in-progress drag: { mode, from, before }
+  undo: [],
+  redo: [],
+};
+
+// ---------- persistence (the palette outlives a reload) ----------
+
+function aeLoadPalette() {
+  try {
+    const raw = window.localStorage.getItem('ledmatrix.palette');
+    const list = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(list) && list.length === AE_PALETTE_SLOTS) {
+      assetEditor.palette = list.map((c) => (parseHex(c) ? c : '#000000'));
+    }
+  } catch (e) {
+    // Private mode, or a file:// page with storage disabled — defaults are fine.
+  }
+}
+
+function aeSavePalette() {
+  try {
+    window.localStorage.setItem('ledmatrix.palette', JSON.stringify(assetEditor.palette));
+  } catch (e) {
+    // Not worth telling anyone about; the palette just won't persist.
+  }
+}
+
+// ---------- pixel helpers ----------
+
+function aeIndex(x, y) {
+  return (y * assetEditor.w + x) * 4;
+}
+
+function aeInside(x, y) {
+  return x >= 0 && y >= 0 && x < assetEditor.w && y < assetEditor.h;
+}
+
+function aeCurrentRgba() {
+  const { color, alpha } = assetEditor;
+  return [color.r, color.g, color.b, alpha];
+}
+
+function aeSetPixel(x, y, rgba) {
+  if (!aeInside(x, y)) return;
+  const i = aeIndex(x, y);
+  assetEditor.px[i] = rgba[0];
+  assetEditor.px[i + 1] = rgba[1];
+  assetEditor.px[i + 2] = rgba[2];
+  assetEditor.px[i + 3] = rgba[3];
+}
+
+function aeGetPixel(x, y) {
+  const i = aeIndex(x, y);
+  return [assetEditor.px[i], assetEditor.px[i + 1], assetEditor.px[i + 2], assetEditor.px[i + 3]];
+}
+
+// A square nib, like the 1.0 tool's brush size.
+function aeStamp(x, y, rgba) {
+  const n = clamp(assetEditor.size, 1, 16);
+  const half = Math.floor((n - 1) / 2);
+  for (let j = 0; j < n; j += 1) {
+    for (let i = 0; i < n; i += 1) aeSetPixel(x - half + i, y - half + j, rgba);
+  }
+}
+
+function aeLineStamp(from, to, rgba) {
+  let { x, y } = from;
+  const dx = Math.abs(to.x - x);
+  const dy = -Math.abs(to.y - y);
+  const sx = x < to.x ? 1 : -1;
+  const sy = y < to.y ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    aeStamp(x, y, rgba);
+    if (x === to.x && y === to.y) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x += sx; }
+    if (e2 <= dx) { err += dx; y += sy; }
+  }
+}
+
+function aeRectStamp(from, to, rgba) {
+  const x0 = Math.min(from.x, to.x);
+  const x1 = Math.max(from.x, to.x);
+  const y0 = Math.min(from.y, to.y);
+  const y1 = Math.max(from.y, to.y);
+  aeLineStamp({ x: x0, y: y0 }, { x: x1, y: y0 }, rgba);
+  aeLineStamp({ x: x0, y: y1 }, { x: x1, y: y1 }, rgba);
+  aeLineStamp({ x: x0, y: y0 }, { x: x0, y: y1 }, rgba);
+  aeLineStamp({ x: x1, y: y0 }, { x: x1, y: y1 }, rgba);
+}
+
+// Flood fill over pixels that match the starting one exactly (4-connected).
+function aeBucket(x, y, rgba) {
+  const target = aeGetPixel(x, y);
+  const same = (p) => p[0] === target[0] && p[1] === target[1] && p[2] === target[2] && p[3] === target[3];
+  if (same(rgba)) return;
+  const stack = [[x, y]];
+  const seen = new Uint8Array(assetEditor.w * assetEditor.h);
+  while (stack.length) {
+    const [cx, cy] = stack.pop();
+    if (!aeInside(cx, cy)) continue;
+    const key = cy * assetEditor.w + cx;
+    if (seen[key]) continue;
+    seen[key] = 1;
+    if (!same(aeGetPixel(cx, cy))) continue;
+    aeSetPixel(cx, cy, rgba);
+    stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+  }
+}
+
+// ---------- undo / redo ----------
+
+function aeSnapshot() {
+  return { w: assetEditor.w, h: assetEditor.h, px: new Uint8ClampedArray(assetEditor.px) };
+}
+
+function aeRestore(snap) {
+  assetEditor.w = snap.w;
+  assetEditor.h = snap.h;
+  assetEditor.px = new Uint8ClampedArray(snap.px);
+  $('aeWidth').value = String(snap.w);
+  $('aeHeight').value = String(snap.h);
+}
+
+function aeCommit(before) {
+  assetEditor.undo.push(before);
+  if (assetEditor.undo.length > 60) assetEditor.undo.shift();
+  assetEditor.redo = [];
+  aeUpdateHistoryButtons();
+}
+
+function aeUpdateHistoryButtons() {
+  $('aeUndo').disabled = assetEditor.undo.length === 0;
+  $('aeRedo').disabled = assetEditor.redo.length === 0;
+}
+
+function aeUndoStep() {
+  const snap = assetEditor.undo.pop();
+  if (!snap) return;
+  assetEditor.redo.push(aeSnapshot());
+  aeRestore(snap);
+  aeUpdateHistoryButtons();
+  renderAssetEditor();
+}
+
+function aeRedoStep() {
+  const snap = assetEditor.redo.pop();
+  if (!snap) return;
+  assetEditor.undo.push(aeSnapshot());
+  aeRestore(snap);
+  aeUpdateHistoryButtons();
+  renderAssetEditor();
+}
+
+// ---------- canvas ----------
 
 function syncAssetEditorLimits() {
   const max = Math.max(128, state.width, state.height);
@@ -3917,13 +4290,15 @@ function syncAssetEditorLimits() {
   $('aeHeight').max = String(max);
 }
 
-function resizeAssetEditor(w, h) {
+function resizeAssetEditor(w, h, keepHistory) {
   const nw = clamp(Math.round(num(w, 16)), 1, 256);
   const nh = clamp(Math.round(num(h, 16)), 1, 256);
+  if (nw === assetEditor.w && nh === assetEditor.h) return;
+  if (!keepHistory) aeCommit(aeSnapshot());
   const next = new Uint8ClampedArray(nw * nh * 4);
   for (let y = 0; y < Math.min(nh, assetEditor.h); y += 1) {
     for (let x = 0; x < Math.min(nw, assetEditor.w); x += 1) {
-      const s = (y * assetEditor.w + x) * 4;
+      const s = aeIndex(x, y);
       next.set(assetEditor.px.subarray(s, s + 4), (y * nw + x) * 4);
     }
   }
@@ -3935,10 +4310,50 @@ function resizeAssetEditor(w, h) {
   renderAssetEditor();
 }
 
+// Crop fully transparent rows and columns off the edges.
+function aeTrim() {
+  let minX = assetEditor.w;
+  let minY = assetEditor.h;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < assetEditor.h; y += 1) {
+    for (let x = 0; x < assetEditor.w; x += 1) {
+      if (assetEditor.px[aeIndex(x, y) + 3] === 0) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) {
+    toast('Nothing to trim — the canvas is empty.', 'error');
+    return;
+  }
+  const nw = maxX - minX + 1;
+  const nh = maxY - minY + 1;
+  if (nw === assetEditor.w && nh === assetEditor.h) {
+    toast('No transparent edges to trim.');
+    return;
+  }
+  aeCommit(aeSnapshot());
+  const next = new Uint8ClampedArray(nw * nh * 4);
+  for (let y = 0; y < nh; y += 1) {
+    const s = aeIndex(minX, minY + y);
+    next.set(assetEditor.px.subarray(s, s + nw * 4), y * nw * 4);
+  }
+  assetEditor.w = nw;
+  assetEditor.h = nh;
+  assetEditor.px = next;
+  $('aeWidth').value = String(nw);
+  $('aeHeight').value = String(nh);
+  renderAssetEditor();
+  toast(`Trimmed to ${nw} × ${nh}`);
+}
+
 function renderAssetEditor() {
   const cv = $('assetEditorCanvas');
   const { w, h } = assetEditor;
-  const cell = clamp(Math.floor(480 / Math.max(w, h)), 4, 24);
+  const cell = clamp(Math.floor(Math.min(520 / w, 380 / h)), 3, 24);
   assetEditor.cell = cell;
   cv.width = w * cell;
   cv.height = h * cell;
@@ -3948,7 +4363,7 @@ function renderAssetEditor() {
     for (let x = 0; x < w; x += 1) {
       c.fillStyle = (x + y) & 1 ? '#0d1a2a' : '#13233a';
       c.fillRect(x * cell, y * cell, cell, cell);
-      const i = (y * w + x) * 4;
+      const i = aeIndex(x, y);
       const a = assetEditor.px[i + 3];
       if (a) {
         c.fillStyle = `rgba(${assetEditor.px[i]}, ${assetEditor.px[i + 1]}, ${assetEditor.px[i + 2]}, ${(a / 255).toFixed(3)})`;
@@ -3956,85 +4371,312 @@ function renderAssetEditor() {
       }
     }
   }
-  c.strokeStyle = 'rgba(255,255,255,0.07)';
-  c.beginPath();
-  for (let x = 0; x <= w; x += 1) { c.moveTo(x * cell + 0.5, 0); c.lineTo(x * cell + 0.5, h * cell); }
-  for (let y = 0; y <= h; y += 1) { c.moveTo(0, y * cell + 0.5); c.lineTo(w * cell, y * cell + 0.5); }
-  c.stroke();
+  if (cell >= 6) {
+    c.strokeStyle = 'rgba(255,255,255,0.07)';
+    c.beginPath();
+    for (let x = 0; x <= w; x += 1) { c.moveTo(x * cell + 0.5, 0); c.lineTo(x * cell + 0.5, h * cell); }
+    for (let y = 0; y <= h; y += 1) { c.moveTo(0, y * cell + 0.5); c.lineTo(w * cell, y * cell + 0.5); }
+    c.stroke();
+  }
+  const note = $('aeSizeNote');
+  const bytes = 54 + w * h * 4;
+  note.textContent = `${w} × ${h} — ${formatBytes(bytes)}`;
+  note.classList.toggle('warn', bytes > MAX_ASSET_BYTES);
+  if (bytes > MAX_ASSET_BYTES) note.textContent += ' — too large for the sign';
 }
 
-function assetCellAt(event) {
-  const rect = $('assetEditorCanvas').getBoundingClientRect();
+// ---------- palette + colour ----------
+
+function aeRenderPalette() {
+  const host = $('aePalette');
+  host.innerHTML = '';
+  assetEditor.palette.forEach((color, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `ae-swatch${i === assetEditor.paletteIndex ? ' selected' : ''}`;
+    b.style.background = color;
+    b.title = `${color} — shift-click to replace with the current color`;
+    b.addEventListener('click', (event) => {
+      if (event.shiftKey) {
+        assetEditor.palette[i] = aeColorHex();
+        aeSavePalette();
+      } else {
+        assetEditor.paletteIndex = i;
+        aeSetColor(assetEditor.palette[i]);
+      }
+      aeRenderPalette();
+    });
+    host.appendChild(b);
+  });
+}
+
+function aeColorHex() {
+  const { r, g, b } = assetEditor.color;
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function aeSetColor(hex) {
+  const c = parseHex(hex);
+  if (!c) return;
+  assetEditor.color = { r: c.r, g: c.g, b: c.b };
+  $('aeColor').value = aeColorHex();
+}
+
+function aeSetAlpha(value) {
+  assetEditor.alpha = clamp(Math.round(num(value, 255)), 0, 255);
+  $('aeAlpha').value = String(assetEditor.alpha);
+  $('aeAlphaValue').textContent = `${Math.round((assetEditor.alpha / 255) * 100)}%`;
+}
+
+// Fill the palette with the colours actually used, most common first.
+function aePaletteFromImage() {
+  const counts = new Map();
+  for (let i = 0; i < assetEditor.px.length; i += 4) {
+    if (assetEditor.px[i + 3] === 0) continue;
+    const key = (assetEditor.px[i] << 16) | (assetEditor.px[i + 1] << 8) | assetEditor.px[i + 2];
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  if (!counts.size) {
+    toast('The canvas is empty, so there are no colors to collect.', 'error');
+    return;
+  }
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, AE_PALETTE_SLOTS);
+  const hex = (k) => `#${(k & 0xffffff).toString(16).padStart(6, '0')}`;
+  assetEditor.palette = top.map(([k]) => hex(k));
+  while (assetEditor.palette.length < AE_PALETTE_SLOTS) {
+    assetEditor.palette.push(AE_DEFAULT_PALETTE[assetEditor.palette.length]);
+  }
+  assetEditor.paletteIndex = 0;
+  aeSetColor(assetEditor.palette[0]);
+  aeSavePalette();
+  aeRenderPalette();
+  toast(`Palette filled with ${Math.min(top.length, AE_PALETTE_SLOTS)} colors from the image`);
+}
+
+function setAssetTool(tool) {
+  assetEditor.tool = tool;
+  document.querySelectorAll('.ae-tool').forEach((b) => b.classList.toggle('active', b.dataset.aeTool === tool));
+  const cv = $('assetEditorCanvas');
+  cv.classList.toggle('picking', tool === 'picker');
+}
+
+// ---------- pointer handling ----------
+
+function aeCellAt(event) {
+  const cv = $('assetEditorCanvas');
+  const rect = cv.getBoundingClientRect();
   return {
     x: clamp(Math.floor(((event.clientX - rect.left) / rect.width) * assetEditor.w), 0, assetEditor.w - 1),
     y: clamp(Math.floor(((event.clientY - rect.top) / rect.height) * assetEditor.h), 0, assetEditor.h - 1),
   };
 }
 
-function paintAssetCell(x, y) {
-  const i = (y * assetEditor.w + x) * 4;
-  if (assetEditor.erase) {
-    assetEditor.px.fill(0, i, i + 4);
-    return;
-  }
-  const c = parseHex(state.color.a) || WHITE;
-  assetEditor.px[i] = c.r;
-  assetEditor.px[i + 1] = c.g;
-  assetEditor.px[i + 2] = c.b;
-  assetEditor.px[i + 3] = state.color.alpha;
+// Right-click picks a colour and middle-click erases, whatever tool is active.
+function aeEffectiveTool(event) {
+  if (event.button === 2) return 'picker';
+  if (event.button === 1) return 'eraser';
+  return assetEditor.tool;
 }
 
-// Fill every cell between the previous and current pointer position so fast
-// strokes don't leave gaps.
-function paintAssetAt(event) {
-  const to = assetCellAt(event);
-  const from = assetEditor.last || to;
-  let { x, y } = from;
-  const dx = Math.abs(to.x - x);
-  const dy = -Math.abs(to.y - y);
-  const sx = x < to.x ? 1 : -1;
-  const sy = y < to.y ? 1 : -1;
-  let err = dx + dy;
-  for (;;) {
-    paintAssetCell(x, y);
-    if (x === to.x && y === to.y) break;
-    const e2 = 2 * err;
-    if (e2 >= dy) { err += dy; x += sx; }
-    if (e2 <= dx) { err += dx; y += sy; }
+function aePickColor(cell) {
+  const [r, g, b, a] = aeGetPixel(cell.x, cell.y);
+  if (a === 0) {
+    toast('That pixel is transparent.', 'error');
+    return;
   }
-  assetEditor.last = to;
+  assetEditor.color = { r, g, b };
+  $('aeColor').value = aeColorHex();
+  aeSetAlpha(a);
+  assetEditor.paletteIndex = -1;
+  aeRenderPalette();
+}
+
+function onAePointerDown(event) {
+  const cv = $('assetEditorCanvas');
+  const cell = aeCellAt(event);
+  const tool = aeEffectiveTool(event);
+  event.preventDefault();
+  cv.setPointerCapture?.(event.pointerId);
+
+  if (tool === 'picker') {
+    aePickColor(cell);
+    return;
+  }
+
+  const before = aeSnapshot();
+  const rgba = tool === 'eraser' ? [0, 0, 0, 0] : aeCurrentRgba();
+
+  if (tool === 'bucket') {
+    aeBucket(cell.x, cell.y, rgba);
+    aeCommit(before);
+    renderAssetEditor();
+    return;
+  }
+
+  assetEditor.stroke = { tool, rgba, from: cell, last: cell, before };
+  if (tool === 'brush' || tool === 'eraser') aeStamp(cell.x, cell.y, rgba);
   renderAssetEditor();
 }
 
-function setAssetBrush(erase) {
-  assetEditor.erase = erase;
-  $('aePen').classList.toggle('active', !erase);
-  $('aeErase').classList.toggle('active', erase);
+function onAePointerMove(event) {
+  const stroke = assetEditor.stroke;
+  if (!stroke) return;
+  const cell = aeCellAt(event);
+  if (stroke.tool === 'brush' || stroke.tool === 'eraser') {
+    // Interpolate so a fast drag leaves no gaps.
+    aeLineStamp(stroke.last, cell, stroke.rgba);
+    stroke.last = cell;
+  } else {
+    // Line and rectangle preview from the untouched snapshot.
+    assetEditor.px = new Uint8ClampedArray(stroke.before.px);
+    if (stroke.tool === 'line') aeLineStamp(stroke.from, cell, stroke.rgba);
+    else aeRectStamp(stroke.from, cell, stroke.rgba);
+    stroke.last = cell;
+  }
+  renderAssetEditor();
 }
 
-function openAssetEditor(ref) {
-  setAssetBrush(false);
+function onAePointerUp() {
+  const stroke = assetEditor.stroke;
+  assetEditor.stroke = null;
+  if (!stroke) return;
+  aeCommit(stroke.before);
+  renderAssetEditor();
+}
+
+// ---------- importing bitmaps ----------
+
+// Draw an image into the canvas. With `resize` the canvas takes the image's
+// size (capped to what the sign can hold); otherwise the image is scaled to
+// fit the current canvas.
+async function aeImportImage(source, { resize } = {}) {
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(source);
+  } catch (e) {
+    // BMPs that browsers refuse (32-bit BGRA with BI_BITFIELDS, say) still
+    // decode with our own reader.
+    try {
+      const buffer = source instanceof Blob ? await source.arrayBuffer() : source;
+      const decoded = decodeBmp(buffer);
+      const tmp = new Raster(decoded.w, decoded.h);
+      tmp.px.set(decoded.rgba);
+      bitmap = await createImageBitmap(tmp.toCanvas());
+    } catch (e2) {
+      throw new Error(`Couldn't read that image: ${e.message}`);
+    }
+  }
+
+  const before = aeSnapshot();
+  let tw;
+  let th;
+  if (resize) {
+    tw = bitmap.width;
+    th = bitmap.height;
+    // An asset larger than the panel can never be shown in full, so the
+    // default is to shrink to the sign; otherwise only the size the sign can
+    // actually store applies.
+    if ($('aeFitSign').checked && (tw > state.width || th > state.height)) {
+      const scale = Math.min(state.width / tw, state.height / th);
+      tw = Math.max(1, Math.round(tw * scale));
+      th = Math.max(1, Math.round(th * scale));
+    }
+    const fit = assetByteLimitSize(tw, th);
+    if (fit) {
+      tw = fit.w;
+      th = fit.h;
+    }
+    tw = clamp(tw, 1, 256);
+    th = clamp(th, 1, 256);
+    assetEditor.w = tw;
+    assetEditor.h = th;
+    assetEditor.px = new Uint8ClampedArray(tw * th * 4);
+    $('aeWidth').value = String(tw);
+    $('aeHeight').value = String(th);
+  } else {
+    const scale = Math.min(assetEditor.w / bitmap.width, assetEditor.h / bitmap.height, 1);
+    tw = Math.max(1, Math.round(bitmap.width * scale));
+    th = Math.max(1, Math.round(bitmap.height * scale));
+  }
+
+  const cv = document.createElement('canvas');
+  cv.width = tw;
+  cv.height = th;
+  const c = cv.getContext('2d');
+  const shrinking = tw < bitmap.width || th < bitmap.height;
+  c.imageSmoothingEnabled = shrinking && $('aeSmooth').checked;
+  c.imageSmoothingQuality = 'high';
+  c.drawImage(bitmap, 0, 0, tw, th);
+  const data = c.getImageData(0, 0, tw, th).data;
+
+  // Centre it when it's smaller than the canvas.
+  const ox = Math.floor((assetEditor.w - tw) / 2);
+  const oy = Math.floor((assetEditor.h - th) / 2);
+  for (let y = 0; y < th; y += 1) {
+    for (let x = 0; x < tw; x += 1) {
+      const s = (y * tw + x) * 4;
+      aeSetPixel(ox + x, oy + y, [data[s], data[s + 1], data[s + 2], data[s + 3]]);
+    }
+  }
+  aeCommit(before);
+  renderAssetEditor();
+  const scaled = tw !== bitmap.width || th !== bitmap.height;
+  toast(scaled
+    ? `Imported at ${tw} × ${th} (from ${bitmap.width} × ${bitmap.height})`
+    : `Imported at ${tw} × ${th}`);
+}
+
+// An image on the clipboard or in a drop, if there is one.
+function imageFromTransfer(source) {
+  const items = source && (source.items || source.files);
+  if (!items) return null;
+  for (const item of items) {
+    if (item.kind === 'file' && item.type.startsWith('image/')) return item.getAsFile();
+    if (item instanceof File && item.type.startsWith('image/')) return item;
+  }
+  return null;
+}
+
+// ---------- open / save ----------
+
+function aeSuggestName(base) {
+  // Bump a trailing number so frames can be drawn one after another.
+  const m = String(base || 'asset').match(/^(.*?)(\d+)$/);
+  if (!m) return `${base}_1`;
+  return `${m[1]}${Number(m[2]) + 1}`;
+}
+
+function aeReset(w, h) {
+  assetEditor.w = w;
+  assetEditor.h = h;
+  assetEditor.px = new Uint8ClampedArray(w * h * 4);
+  assetEditor.undo = [];
+  assetEditor.redo = [];
+  assetEditor.stroke = null;
+  $('aeWidth').value = String(w);
+  $('aeHeight').value = String(h);
+  aeUpdateHistoryButtons();
+}
+
+function openAssetEditor(ref, options = {}) {
+  setAssetTool('brush');
   const defaultAnim = sanitizeAnimName($('assetTargetAnim').value) || sanitizeAnimName($('animNameInput').value) || 'demo_anim';
   if (!ref) {
-    assetEditor.w = 16;
-    assetEditor.h = 16;
-    assetEditor.px = new Uint8ClampedArray(16 * 16 * 4);
-    $('aeWidth').value = '16';
-    $('aeHeight').value = '16';
+    aeReset(16, 16);
     $('aeAnim').value = defaultAnim;
     $('assetNameInput').value = 'custom_asset';
     $('assetEditorTitle').textContent = 'New asset';
     renderAssetEditor();
     openModal('assetEditorModal');
+    if (options.importFrom) {
+      aeImportImage(options.importFrom, { resize: true }).catch(fail);
+    }
     return;
   }
   const { anim, file } = splitAssetRef(ref);
   ensureAsset(ref).then((asset) => {
-    assetEditor.w = asset.w;
-    assetEditor.h = asset.h;
+    aeReset(asset.w, asset.h);
     assetEditor.px = new Uint8ClampedArray(asset.rgba);
-    $('aeWidth').value = String(asset.w);
-    $('aeHeight').value = String(asset.h);
     $('aeAnim').value = anim;
     $('assetNameInput').value = file.replace(/\.bmp$/i, '');
     $('assetEditorTitle').textContent = `Edit ${file}`;
@@ -4049,37 +4691,105 @@ function saveAssetFromEditor() {
     toast('Enter the animation this asset belongs to.', 'error');
     return;
   }
+  const bytes = 54 + assetEditor.w * assetEditor.h * 4;
+  if (bytes > MAX_ASSET_BYTES) {
+    toast(`${assetEditor.w} × ${assetEditor.h} is ${formatBytes(bytes)}; the sign accepts up to ${formatBytes(MAX_ASSET_BYTES)}. Shrink it or trim the edges.`, 'error');
+    return;
+  }
   const file = sanitizeFileName($('assetNameInput').value, 'custom_asset');
   uploadAssetBytes(anim, file, encodeBmp32(assetEditor.w, assetEditor.h, assetEditor.px))
     .then(() => {
       toast(`Saved ${anim}/${file}`);
-      closeModal('assetEditorModal');
       return refreshFiles();
     })
-    .then(() => selectAsset(`${anim}/${file}`, false))
+    .then(() => {
+      selectAsset(`${anim}/${file}`, false);
+      // Ready for the next frame, without closing the editor.
+      $('assetNameInput').value = aeSuggestName(file.replace(/\.bmp$/i, ''));
+    })
     .catch(fail);
 }
 
 function initAssetEditor() {
   const cv = $('assetEditorCanvas');
-  cv.addEventListener('pointerdown', (event) => {
-    assetEditor.painting = true;
-    assetEditor.last = null;
-    cv.setPointerCapture?.(event.pointerId);
-    paintAssetAt(event);
+  cv.addEventListener('pointerdown', onAePointerDown);
+  cv.addEventListener('pointermove', onAePointerMove);
+  cv.addEventListener('pointerup', onAePointerUp);
+  cv.addEventListener('pointercancel', onAePointerUp);
+  cv.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  document.querySelectorAll('.ae-tool').forEach((b) => {
+    b.addEventListener('click', () => setAssetTool(b.dataset.aeTool));
   });
-  cv.addEventListener('pointermove', (event) => { if (assetEditor.painting) paintAssetAt(event); });
-  const stop = () => { assetEditor.painting = false; assetEditor.last = null; };
-  cv.addEventListener('pointerup', stop);
-  cv.addEventListener('pointercancel', stop);
-  $('aePen').addEventListener('click', () => setAssetBrush(false));
-  $('aeErase').addEventListener('click', () => setAssetBrush(true));
-  $('aeClear').addEventListener('click', () => { assetEditor.px.fill(0); renderAssetEditor(); });
+  $('aeBrushSize').addEventListener('input', (event) => {
+    assetEditor.size = clamp(Math.round(num(event.target.value, 1)), 1, 16);
+  });
+  $('aeColor').addEventListener('input', (event) => {
+    aeSetColor(event.target.value);
+    assetEditor.paletteIndex = -1;
+    aeRenderPalette();
+  });
+  $('aeAlpha').addEventListener('input', (event) => aeSetAlpha(event.target.value));
+  $('aePaletteFromImage').addEventListener('click', aePaletteFromImage);
+  $('aeUndo').addEventListener('click', aeUndoStep);
+  $('aeRedo').addEventListener('click', aeRedoStep);
+  $('aeClear').addEventListener('click', () => {
+    aeCommit(aeSnapshot());
+    assetEditor.px.fill(0);
+    renderAssetEditor();
+  });
+  $('aeTrim').addEventListener('click', aeTrim);
+  $('aeFitMatrix').addEventListener('click', () => resizeAssetEditor(state.width, state.height));
   $('aeWidth').addEventListener('change', () => resizeAssetEditor($('aeWidth').value, assetEditor.h));
   $('aeHeight').addEventListener('change', () => resizeAssetEditor(assetEditor.w, $('aeHeight').value));
   $('saveAssetButton').addEventListener('click', saveAssetFromEditor);
+
+  $('aeImport').addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (file) aeImportImage(file, { resize: $('aeImportResize').checked }).catch(fail);
+  });
+
+  // Drag and drop onto the canvas.
+  const stage = $('aeStage');
+  ['dragenter', 'dragover'].forEach((type) => stage.addEventListener(type, (event) => {
+    event.preventDefault();
+    stage.classList.add('dropping');
+  }));
+  ['dragleave', 'drop'].forEach((type) => stage.addEventListener(type, (event) => {
+    event.preventDefault();
+    stage.classList.remove('dropping');
+  }));
+  stage.addEventListener('drop', (event) => {
+    const file = imageFromTransfer(event.dataTransfer);
+    if (file) aeImportImage(file, { resize: $('aeImportResize').checked }).catch(fail);
+    else toast('That drop had no image in it.', 'error');
+  });
+
   syncAssetEditorLimits();
+  aeLoadPalette();
+  aeRenderPalette();
+  aeSetColor(assetEditor.palette[assetEditor.paletteIndex] || '#ff0000');
+  aeSetAlpha(255);
   renderAssetEditor();
+}
+
+// Paste anywhere on the page: into the editor if it's open, otherwise open it
+// with the image loaded. This is the quickest path from a phone screenshot to
+// an asset on the sign.
+function initClipboardImport() {
+  document.addEventListener('paste', (event) => {
+    if (isTyping(event.target)) return;
+    const file = imageFromTransfer(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    if ($('assetEditorModal').classList.contains('hidden')) {
+      switchTab('assets');
+      openAssetEditor(null, { importFrom: file });
+    } else {
+      aeImportImage(file, { resize: $('aeImportResize').checked }).catch(fail);
+    }
+  });
 }
 
 // =====================================================================
@@ -4857,6 +5567,21 @@ function bindEvents() {
 
   // Assets
   $('newAssetButton').addEventListener('click', () => openAssetEditor(null));
+
+  // Dropping an image on the Assets tab opens the editor with it loaded.
+  const assetsPanel = document.querySelector('[data-tab-panel="assets"]');
+  ['dragenter', 'dragover'].forEach((type) => assetsPanel.addEventListener(type, (event) => {
+    event.preventDefault();
+    assetsPanel.classList.add('dropping');
+  }));
+  ['dragleave', 'drop'].forEach((type) => assetsPanel.addEventListener(type, (event) => {
+    assetsPanel.classList.remove('dropping');
+  }));
+  assetsPanel.addEventListener('drop', (event) => {
+    event.preventDefault();
+    const file = imageFromTransfer(event.dataTransfer);
+    if (file) openAssetEditor(null, { importFrom: file });
+  });
   $('assetUpload').addEventListener('change', (event) => {
     const files = [...event.target.files];
     event.target.value = '';
@@ -4927,7 +5652,19 @@ function bindEvents() {
   // Keyboard
   const TOOL_KEYS = { v: 'select', t: 'text', s: 'scroll', l: 'line', r: 'rectangle', a: 'asset', m: 'move' };
   const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  const AE_KEYS = { b: 'brush', e: 'eraser', f: 'bucket', l: 'line', r: 'rect', i: 'picker' };
   document.addEventListener('keydown', (event) => {
+    // The asset editor has its own shortcuts while it's open.
+    if (!$('assetEditorModal').classList.contains('hidden') && !isTyping(event.target)) {
+      const k = event.key.toLowerCase();
+      if (event.ctrlKey || event.metaKey) {
+        if (k === 'z' && !event.shiftKey) { event.preventDefault(); aeUndoStep(); return; }
+        if ((k === 'z' && event.shiftKey) || k === 'y') { event.preventDefault(); aeRedoStep(); return; }
+      } else if (AE_KEYS[k]) {
+        setAssetTool(AE_KEYS[k]);
+        return;
+      }
+    }
     if (event.key === 'Escape') {
       const open = openModalIds();
       if (open.length) {
@@ -5015,6 +5752,7 @@ function init() {
   buildColorSwatches();
   buildFontSelects();
   initAssetEditor();
+  initClipboardImport();
   bindEvents();
   bindTabs();
   setTool('text');
