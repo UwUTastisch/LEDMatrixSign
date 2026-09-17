@@ -31,8 +31,8 @@ from bs4 import BeautifulSoup
 DEVICE_HOST = "http://fenster-matrix.hackhro" #"http://4.3.2.1"          # <-- set to your device's address
 ANIM_NAME = "de.hack-hro.rsag_monitor"          # <-- the /anim/<id>/ this gets uploaded to
 STATIONS = [
-    ("S Parkstraße", "https://abfahrten-rsag.de/dfi/_/7"),
-    ("Doberaner Platz", "https://abfahrten-rsag.de/dfi/_/14"),
+    ("S Parkstraße", "https://abfahrten-rsag.de/dfi/_/7", "#0a2814"),
+    ("Doberaner Platz", "https://abfahrten-rsag.de/dfi/_/14", "#0a1432"),
 ]
 REFRESH_SECONDS = 30
 MAX_ROWS = 5
@@ -116,8 +116,8 @@ def replace_german_chars(value):
     }))
 
 
-def build_params(station_name, departures):
-    params = {"station": replace_german_chars(station_name)}
+def build_params(station_name, departures, bar_color):
+    params = {"station": replace_german_chars(station_name), "bar_color": bar_color}
     rows = departures[:MAX_ROWS]
     for i in range(1, MAX_ROWS + 1):
         n = i - 1
@@ -135,9 +135,9 @@ def build_params(station_name, departures):
     return params
 
 def push_once():
-    station_name, station_url = STATIONS[push_once.station_index]
+    station_name, station_url, bar_color = STATIONS[push_once.station_index]
     departures = fetch_departures(station_url)
-    params = build_params(station_name, departures)
+    params = build_params(station_name, departures, bar_color)
     api_post("/anim/start", {"animname": ANIM_NAME, "params": params, "cycles": 0})
     print(f"pushed {len(departures)} departures for {station_name} ({time.strftime('%H:%M:%S')})")
     push_once.station_index = (push_once.station_index + 1) % len(STATIONS)

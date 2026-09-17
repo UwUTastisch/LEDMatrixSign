@@ -1,7 +1,7 @@
 {
   "default_params": {
     "station": "Station Name",
-    "bar_color": "#21353d",
+    "bar_color": "#0a2814",
 
     "active1": true,
     "active2": true,
@@ -351,7 +351,45 @@
           }
         }
       ],
-      "duration": 3600000
+      "duration": 120000
+    },
+    { "clear": {} },
+    {
+      "drawables": [
+        {
+          "text": {
+            "x": 3,
+            "y": 20,
+            "text": "Data is",
+            "font": "5x7",
+            "color": "#c8c8c8"
+          }
+        },
+        {
+          "text": {
+            "x": 3,
+            "y": 30,
+            "text": "outdated",
+            "font": "5x7",
+            "color": "#c8c8c8"
+          }
+        },
+        {
+          "text": {
+            "x": 60,
+            "y": 30,
+            "text": "qwq",
+            "font": "5x7",
+            "color": "#c8c8c8"
+          }
+        }
+      ],
+      "duration": 120000
+    },
+    { "clear": {} },
+    {
+      "drawables": [],
+      "duration": 36000000
     }
   ]
 }
