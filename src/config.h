@@ -152,30 +152,6 @@ public:
     uint8_t apChannel = WIFI_CHANNEL;
     bool apHidden = false;
 
-    // Wi-Fi supervision (see maintainWiFi)
-    static constexpr unsigned long kBootConnectMs = 30000;     // was 10 s
-    static constexpr unsigned long kRetryMs = 15000;           // first retry
-    static constexpr unsigned long kMaxRetryMs = 120000;       // backoff cap
-    static constexpr unsigned long kRestartMs = 10UL * 60000;  // give up → reboot
-    bool apFallback = false;
-    bool wasConnected = true;
-    unsigned long lastConnectedMs = 0;
-    unsigned long lastAttemptMs = 0;
-    unsigned long retryDelayMs = kRetryMs;
-
-    // Log why the link went away — the reason code is the single most useful
-    // clue next time it drops (e.g. 200 BEACON_TIMEOUT, 8 ASSOC_LEAVE,
-    // 2/15 auth expired / 4-way handshake timeout).
-    static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
-    {
-        if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED)
-            Serial.printf("⚠️ Wi-Fi disconnected, reason=%d t=%lus heap=%u maxblk=%u\n",
-                          (int)info.wifi_sta_disconnected.reason, millis() / 1000,
-                          (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
-        else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP)
-            Serial.printf("📶 got IP %s\n", WiFi.localIP().toString().c_str());
-    }
-
     // Call this once — mounts SD or LittleFS and reads config.json.
     bool loadConfig(const char *path)
     {
@@ -211,110 +187,32 @@ public:
             Serial.println("⚠️ No Wi-Fi creds in config");
             return;
         }
-        // Settings that keep the station link stable on a busy network:
-        //  - no modem sleep: with it on, the radio naps between beacons and
-        //    busy APs / heavy ISR load (the RMT LED refill) make it miss
-        //    them until the AP drops us.
-        //  - don't write credentials to NVS on every begin() (flash wear).
-        WiFi.persistent(false);
-        WiFi.mode(WIFI_STA);
-        WiFi.setSleep(false);
-        WiFi.setAutoReconnect(true);
-        WiFi.onEvent(onWiFiEvent);
-
         Serial.printf("Connecting to Wi-Fi \"%s\" …\n", wifiSsid.c_str());
         WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
         unsigned long start = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - start < kBootConnectMs)
+        while (WiFi.status() != WL_CONNECTED && millis() - start < 10000)
         {
             delay(500);
             Serial.print('.');
         }
         if (WiFi.status() != WL_CONNECTED)
         {
-            Serial.println("❌ Wi-Fi failed, starting captive AP (still retrying STA)…");
+            Serial.println("❌ Wi-Fi failed, starting captive AP…");
             startSoftAP();
             setUpDNSServer();
-            apFallback = true;
         }
         Serial.println();
         Serial.print("📶 IP Address: ");
-        if (apFallback)
+        if (WiFi.getMode() == WIFI_MODE_AP)
             Serial.println(WiFi.softAPIP());
         else
             Serial.println(WiFi.localIP());
-        lastConnectedMs = millis();
-        lastAttemptMs = millis();
     }
-
-    // Call every loop(). Keeps the station connected to the configured
-    // network:
-    //  - if the link has been down for kRetryMs, force a fresh begin()
-    //    (the core's auto-reconnect gives up on some disconnect reasons);
-    //  - if it has been down for kRestartMs despite that, reboot;
-    //  - while in AP fallback, keep trying the real network in the
-    //    background and reboot into normal STA mode once it's reachable.
-    void maintainWiFi(unsigned long now)
-    {
-        if (wifiSsid.isEmpty())
-            return;
-
-        if (WiFi.status() == WL_CONNECTED)
-        {
-            if (apFallback)
-            {
-                // Captive-portal routes + DNS are still registered; a clean
-                // reboot is the simplest way back to plain STA mode.
-                Serial.println("📶 Home Wi-Fi reachable again — rebooting out of AP fallback");
-                Serial.flush();
-                delay(100);
-                ESP.restart();
-            }
-            if (!wasConnected)
-            {
-                Serial.printf("📶 Wi-Fi back: %s RSSI=%d\n",
-                              WiFi.localIP().toString().c_str(), WiFi.RSSI());
-                wasConnected = true;
-            }
-            lastConnectedMs = now;
-            retryDelayMs = kRetryMs;
-            return;
-        }
-
-        if (wasConnected)
-        {
-            Serial.println("⚠️ Wi-Fi link down");
-            wasConnected = false;
-        }
-
-        if (now - lastAttemptMs >= retryDelayMs)
-        {
-            Serial.printf("🔁 Wi-Fi reconnect attempt (down %lus, status=%d)\n",
-                          (now - lastConnectedMs) / 1000, (int)WiFi.status());
-            lastAttemptMs = now;
-            WiFi.disconnect(false, false); // keep the radio + any AP up
-            WiFi.begin(wifiSsid.c_str(), wifiPassword.c_str());
-            // Back off so a long outage doesn't hammer the AP (and, in AP
-            // fallback, doesn't keep interrupting portal clients' channel).
-            retryDelayMs = min<unsigned long>(retryDelayMs * 2, kMaxRetryMs);
-        }
-
-        if (!apFallback && now - lastConnectedMs >= kRestartMs)
-        {
-            Serial.println("❌ Wi-Fi down too long — rebooting");
-            Serial.flush();
-            delay(100);
-            ESP.restart();
-        }
-    }
-
-    bool inApFallback() const { return apFallback; }
 
 private:
     void startSoftAP()
     {
-        // AP+STA so maintainWiFi() can keep trying the real network.
-        WiFi.mode(WIFI_MODE_APSTA);
+        WiFi.mode(WIFI_MODE_AP);
         WiFi.softAPConfig(portalIP, gatewayIP, subnetMask);
 
         if (apSSID.isEmpty())

@@ -456,16 +456,6 @@ public:
     Rgba tint;
     String tintTmpl;
     String boundPath;
-
-    // Decoded bitmap, loaded once per path instead of every frame. Reading
-    // the BMP from the FS in render() meant ~5 open/alloc/free cycles per
-    // frame for hours on end, which fragments the heap until the Wi-Fi
-    // driver can't get contiguous buffers any more.
-    Asset cached;
-    String cachedPath;
-    unsigned long lastMissMs = 0;
-    static constexpr unsigned long kMissRetryMs = 5000; // re-check a missing file
-
     const char *type() const override { return "asset"; }
     void bind(const Params &p, const String &animDir) override
     {
@@ -485,22 +475,13 @@ public:
         if (!visible) return;
         String path = boundPath.length() ? boundPath
                                           : resolveAssetPath(name, env.animDir);
-        const unsigned long now = millis();
-        bool pathChanged = (path != cachedPath);
-        if (pathChanged || (!cached.ok && now - lastMissMs >= kMissRetryMs))
-        {
-            cached = Asset(); // free the old pixels before loading new ones
-            cached = AssetLoader::load(path);
-            cachedPath = path;
-            if (!cached.ok) lastMissMs = now;
-        }
-        if (!cached.ok)
+        Asset a = AssetLoader::load(path);
+        if (!a.ok)
         {
             env.fb.missingPattern(x, y); // spec: 4x4 purple/black on miss
             return;
         }
-        env.fb.blitBGRA(cached.bgra.data(), cached.w, cached.h, x, y,
-                        hasTint ? &tint : nullptr);
+        env.fb.blitBGRA(a.bgra.data(), a.w, a.h, x, y, hasTint ? &tint : nullptr);
     }
     void toJson(JsonObject f) override
     {
