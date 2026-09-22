@@ -142,11 +142,27 @@ static const unsigned long kFrameIntervalMs = 1000UL / kTargetFps; // ~16 ms
 
 void loop()
 {
-    if (WiFi.getMode() == WIFI_MODE_AP)
+    const unsigned long now = millis();
+
+    if (config.inApFallback())
         dnsServer.processNextRequest();
 
+    // Keep the station on the configured network (reconnect / reboot).
+    config.maintainWiFi(now);
+
+    // Once a minute: heap health. A steadily shrinking maxblk (largest free
+    // block) means fragmentation, which eventually starves the Wi-Fi driver.
+    static unsigned long lastHeapLog = 0;
+    if (now - lastHeapLog >= 60000)
+    {
+        lastHeapLog = now;
+        Serial.printf("[H] up=%lus heap=%u min=%u maxblk=%u wifi=%d rssi=%d\n",
+                      now / 1000, (unsigned)ESP.getFreeHeap(),
+                      (unsigned)ESP.getMinFreeHeap(), (unsigned)ESP.getMaxAllocHeap(),
+                      (int)WiFi.status(), (int)WiFi.RSSI());
+    }
+
     static unsigned long lastFrame = 0;
-    const unsigned long now = millis();
     if (now - lastFrame >= kFrameIntervalMs)
     {
         lastFrame = now;
