@@ -1,0 +1,49 @@
+{
+  "frames": [
+    {
+      "drawables": [
+        {
+          "text": {
+            "x": 1,
+            "y": 15,
+            "text": "Hack Hro",
+            "font": "5x7",
+            "objname": "text_1788984922344",
+            "color": "#ff0000"
+          }
+        },
+        {
+          "text": {
+            "x": 71,
+            "y": 15,
+            "text": "Open",
+            "font": "5x7",
+            "objname": "text_1788984989695",
+            "color": "#00ff00"
+          }
+        },
+        {
+          "text": {
+            "x": 6,
+            "y": 40,
+            "text": "0381 36779944",
+            "font": "5x7",
+            "objname": "text_1788985567295",
+            "color": "#613583"
+          }
+        },
+        {
+          "text": {
+            "x": 2,
+            "y": 32,
+            "text": "Ruf uns an:",
+            "font": "5x7",
+            "objname": "text_1788985677634",
+            "color": "#00ffff"
+          }
+        }
+      ],
+      "duration": 1000
+    }
+  ]
+}
