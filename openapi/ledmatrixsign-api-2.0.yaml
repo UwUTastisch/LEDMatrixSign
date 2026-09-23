@@ -660,15 +660,40 @@ paths:
               schema:
                 type: object
                 properties:
-                  brightness: {type: integer, minimum: 0, maximum: 255}
-              example: {brightness: 128}
+                  brightness:
+                    type: integer
+                    minimum: 0
+                    maximum: 255
+                    description: As last requested (or `def.bri` after boot).
+                  applied:
+                    type: integer
+                    minimum: 0
+                    maximum: 255
+                    description: |
+                      What the last frame actually used, after `light.scale-bri`
+                      and the current limiter (`hw.led.maxpwr`).
+                  pwr:
+                    type: integer
+                    description: |
+                      Estimated draw of the last frame in mA, LEDs + ESP32
+                      (same model as WLED's `info.leds.pwr`).
+                  maxpwr:
+                    type: integer
+                    description: Current budget in mA from config.json; 0 = limiter off.
+              example: {brightness: 200, applied: 53, pwr: 9986, maxpwr: 10000}
     post:
       tags: [display]
       summary: Set panel brightness
       description: |
         Scales the whole panel, 0-255; values outside that range are clamped,
         and a missing field means 255. Applied by the driver on output, so
-        `/framebuffer/get` is unaffected. Not persisted across reboots.
+        `/framebuffer/get` is unaffected. Not persisted across reboots: after
+        boot the sign uses `def.bri` from config.json.
+
+        The value is further scaled by `light.scale-bri` and, if
+        `hw.led.maxpwr` is set, lowered per frame to stay inside the current
+        budget — both as in WLED (https://github.com/wled/WLED). Read
+        `GET /display/brightness` for what was actually applied.
       requestBody:
         required: true
         content:

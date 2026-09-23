@@ -80,7 +80,7 @@ tools/
 ## Filesystem layout
 
 ```
-/config.json                         hardware + Wi-Fi config (unchanged from 1.0)
+/config.json                         hardware + Wi-Fi config (WLED-inspired; 1.0 files still work)
 /anim/<id>/anim.json                 one animation
 /anim/<id>/assets/<file>.bmp         its assets, 32-bit BGRA8888
 ```
@@ -99,13 +99,13 @@ of the second frame) for use in `clear`.
 
 ### Drawable objects
 
-| type | key fields | notes |
-|------|-----------|-------|
-| `text` | `x,y,text,font,color` | static string |
-| `scrolling_text` | `x,y,dx,dy,text,font,color,scroll_speed,scroll_direction` | scrolls within the `dx`×`dy` viewport; speed in px/s; direction `horizontal`\|`vertical` |
-| `line` | `x,y,dx,dy,thickness,color` | `dx,dy` are deltas; endpoint is `(x+dx, y+dy)` |
-| `rectangle` | `x,y,dx,dy,border,color` | `border` 0 = filled, else outline thickness |
-| `asset` | `x,y,name,color` | draws `assets/<name>`, or `<animid>/<file>` for another animation's asset (required on the API overlay, which has no animation of its own); `color` tints monochrome assets |
+| type             | key fields                                                | notes                                                                                                                                                                       |
+| ---------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`           | `x,y,text,font,color`                                     | static string                                                                                                                                                               |
+| `scrolling_text` | `x,y,dx,dy,text,font,color,scroll_speed,scroll_direction` | scrolls within the `dx`×`dy` viewport; speed in px/s; direction `horizontal`\|`vertical`                                                                                    |
+| `line`           | `x,y,dx,dy,thickness,color`                               | `dx,dy` are deltas; endpoint is `(x+dx, y+dy)`                                                                                                                              |
+| `rectangle`      | `x,y,dx,dy,border,color`                                  | `border` 0 = filled, else outline thickness                                                                                                                                 |
+| `asset`          | `x,y,name,color`                                          | draws `assets/<name>`, or `<animid>/<file>` for another animation's asset (required on the API overlay, which has no animation of its own); `color` tints monochrome assets |
 
 Every drawable also takes `objname` (a handle for `clear`) and `visible`
 (`true`/`false`, or `"{param}"`, optionally negated with `!`) — an object
@@ -145,42 +145,102 @@ All bodies are JSON unless noted. Errors return `{"error":"<reason>"}` with a 4x
 
 ### `/framebuffer` — the API overlay layer
 
-| method | path | body / params | effect |
-|--------|------|---------------|--------|
-| POST | `/framebuffer/draw` | a single frame object (same shape as one `frames[]` entry) | applies it to the API buffer |
-| POST | `/framebuffer/savetostorage` | `{animname, filename?}` | saves the current API buffer as a one-frame `anim.json` under `/anim/<animname>/` |
-| GET | `/framebuffer/get` | — | `{width,height,format:"BGRA8888",data:<base64>}` of the composited output |
-| GET | `/framebuffer/getcomposition` | — | live object trees: `{width,height,primary:[…],api:[…]}` |
-| GET | `/framebuffer/size` | — | `{width,height}` |
+| method | path                          | body / params                                              | effect                                                                            |
+| ------ | ----------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| POST   | `/framebuffer/draw`           | a single frame object (same shape as one `frames[]` entry) | applies it to the API buffer                                                      |
+| POST   | `/framebuffer/savetostorage`  | `{animname, filename?}`                                    | saves the current API buffer as a one-frame `anim.json` under `/anim/<animname>/` |
+| GET    | `/framebuffer/get`            | —                                                          | `{width,height,format:"BGRA8888",data:<base64>}` of the composited output         |
+| GET    | `/framebuffer/getcomposition` | —                                                          | live object trees: `{width,height,primary:[…],api:[…]}`                           |
+| GET    | `/framebuffer/size`           | —                                                          | `{width,height}`                                                                  |
 
 ### `/file` — storage
 
-| method | path | body / params | effect |
-|--------|------|---------------|--------|
-| POST | `/file/uploadanim` | `{animname, anim:{…}}` | writes `/anim/<animname>/anim.json` |
-| POST | `/file/uploadasset` | `{animname, filename, data:<base64 BMP>}` | writes `/anim/<animname>/assets/<filename>` |
-| GET | `/file/ls` | — | `{anims:[{id,assets:[…]}]}` |
-| GET | `/file/download` | `?path=/anim/<id>/anim.json` | streams the file (restricted to `/anim/…` and `/config.json`) |
-| GET | `/file/fsstatus` | — | `{fs,total,used,free}` |
+| method | path                | body / params                             | effect                                                        |
+| ------ | ------------------- | ----------------------------------------- | ------------------------------------------------------------- |
+| POST   | `/file/uploadanim`  | `{animname, anim:{…}}`                    | writes `/anim/<animname>/anim.json`                           |
+| POST   | `/file/uploadasset` | `{animname, filename, data:<base64 BMP>}` | writes `/anim/<animname>/assets/<filename>`                   |
+| GET    | `/file/ls`          | —                                         | `{anims:[{id,assets:[…]}]}`                                   |
+| GET    | `/file/download`    | `?path=/anim/<id>/anim.json`              | streams the file (restricted to `/anim/…` and `/config.json`) |
+| GET    | `/file/fsstatus`    | —                                         | `{fs,total,used,free}`                                        |
 
 ### `/anim` — the primary player
 
-| method | path | body / params | effect |
-|--------|------|---------------|--------|
-| POST | `/anim/start` | `{animname, params?, cycles?}` | loads + plays `/anim/<animname>/`; `cycles` 0 = loop forever |
-| POST | `/anim/setspeed` | `{speed}` | global live speed multiplier |
-| POST | `/anim/pause` | — | hold the timeline; the current frame keeps its remaining time |
-| POST | `/anim/resume` | — | continue a paused animation |
-| POST | `/anim/stop` | — | stops and clears the primary layer |
-| GET | `/anim/status` | — | `{running,paused,speed,animname}` |
+| method | path             | body / params                  | effect                                                        |
+| ------ | ---------------- | ------------------------------ | ------------------------------------------------------------- |
+| POST   | `/anim/start`    | `{animname, params?, cycles?}` | loads + plays `/anim/<animname>/`; `cycles` 0 = loop forever  |
+| POST   | `/anim/setspeed` | `{speed}`                      | global live speed multiplier                                  |
+| POST   | `/anim/pause`    | —                              | hold the timeline; the current frame keeps its remaining time |
+| POST   | `/anim/resume`   | —                              | continue a paused animation                                   |
+| POST   | `/anim/stop`     | —                              | stops and clears the primary layer                            |
+| GET    | `/anim/status`   | —                              | `{running,paused,speed,animname}`                             |
 
 ### `/display`
 
-| method | path | body / params | effect |
-|--------|------|---------------|--------|
-| POST | `/display/brightness` | `{brightness}` (0–255) | sets brightness |
-| GET | `/display/brightness` | — | `{brightness}` |
-| GET | `/display/gpiopins` | — | `{data_pin, sd:{cs,mosi,miso,sck}}` |
+| method | path                  | body / params          | effect                               |
+| ------ | --------------------- | ---------------------- | ------------------------------------ |
+| POST   | `/display/brightness` | `{brightness}` (0–255) | sets brightness                      |
+| GET    | `/display/brightness` | —                      | `{brightness, applied, pwr, maxpwr}` |
+
+Brightness and the power limit are configured in `config.json`, see
+[Brightness & power](#brightness--power-configjson) below.
+
+#### Brightness & power (`config.json`)
+
+These settings follow [WLED](https://github.com/wled/WLED): the same keys,
+the same meaning and the same current model, so a WLED `cfg.json` (or the
+values from WLED's _LED Preferences_ page) can be copied over unchanged.
+All keys are optional.
+
+| Key                    | Meaning                                                                                                     | Default |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------- | ------- |
+| `hw.led.maxpwr`        | current budget in mA for LEDs + ESP32; each frame is dimmed just enough to stay under it. `0` = limiter off | `0`     |
+| `hw.led.ins[0].maxpwr` | per-output budget, used when `hw.led.maxpwr` is `0`                                                         | `0`     |
+| `hw.led.ins[0].ledma`  | mA per LED at full white (WS2812B ≈ 55)                                                                     | `55`    |
+| `light.scale-bri`      | brightness scale in percent, applied to every brightness request                                            | `100`   |
+| `def.bri`              | brightness after boot, until `/display/brightness` sets one                                                 | `128`   |
+
+```json
+{
+  "hw": {
+    "led": {
+      "total": 4608,
+      "maxpwr": 10000,
+      "ins": [{ "start": 0, "len": 4608, "pin": [10], "ledma": 55 }]
+    }
+  },
+  "light": { "scale-bri": 100 },
+  "def": { "bri": 128 }
+}
+```
+
+How the limiter works (as in WLED's automatic brightness limiter, "ABL"):
+every frame the firmware estimates the draw as
+`colour sum × ledma / (3 × 255) + 1 mA standby per LED + 120 mA for the ESP32`,
+and if that exceeds `maxpwr` it lowers the brightness of that frame until it
+fits. Two differences from WLED: only the colour part is scaled when solving
+for the brightness (the standby current doesn't dim), and WLED's special
+`ledma: 255` value for WS2815 strips is not supported.
+
+It is an estimate, not a measurement. Set `maxpwr` below what the supply
+really delivers (~20 % margin is a common rule of thumb), and note that
+every LED draws about 1 mA even when black: with 4608 LEDs that is ~4.6 A
+before anything lights up, and a budget below that dims everything to the
+minimum. `GET /display/brightness` reports `applied` (the brightness the
+last frame actually used) and `pwr` (the estimated draw in mA), like
+`info.leds.pwr` in WLED's JSON API.
+
+This is an independent implementation of the same model — no WLED source
+code is included (WLED is EUPL-1.2 licensed, this project is MIT).
+
+Reference — where WLED defines this, for comparison:
+
+- config keys: [`wled00/cfg.cpp`](https://github.com/wled/WLED/blob/main/wled00/cfg.cpp)
+  (`hw.led.maxpwr`, `ins[].ledma`, `ins[].maxpwr`, `light.scale-bri`, `def.bri`)
+- current estimate and limiter: [`wled00/bus_manager.cpp`](https://github.com/wled/WLED/blob/main/wled00/bus_manager.cpp)
+  (`BusDigital::estimateCurrent()`, `BusManager::applyABL()`)
+- ESP32 share and defaults: [`wled00/bus_manager.h`](https://github.com/wled/WLED/blob/main/wled00/bus_manager.h) (`MA_FOR_ESP`),
+  [`wled00/const.h`](https://github.com/wled/WLED/blob/main/wled00/const.h) (`LED_MILLIAMPS_DEFAULT`)
+- WLED documentation: [kno.wled.ge](https://kno.wled.ge)
 
 ### Example session
 

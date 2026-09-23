@@ -474,7 +474,10 @@ private:
         server.on("/display/brightness", HTTP_GET, [this](AsyncWebServerRequest *req)
                   {
             JsonDocument doc;
-            doc["brightness"] = driver->brightness;
+            doc["brightness"] = driver->brightness;       // as requested
+            doc["applied"] = driver->appliedBri;          // after scale-bri + limiter
+            doc["pwr"] = driver->estimatedMilliamps;      // estimated mA (WLED: info.leds.pwr)
+            doc["maxpwr"] = config.maxMilliamps;          // budget, 0 = off
             sendJson(req, 200, doc); });
 
         // GET /display/gpiopins

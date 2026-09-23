@@ -2,6 +2,7 @@
   "hw": {
     "led": {
       "total": 4608,
+      "maxpwr": 10000,
       "ins": [
         {
           "start": 0,
@@ -9,7 +10,8 @@
           "skip": 0,
           "pin": [10],
           "order": 1,
-          "rev": false
+          "rev": false,
+          "ledma": 55
         }
       ],
       "matrix": {
@@ -202,6 +204,12 @@
         ]
       }
     }
+  },
+  "light": {
+    "scale-bri": 100
+  },
+  "def": {
+    "bri": 128
   },
   "wifi": {
     "ssid": "pixel_matrix",

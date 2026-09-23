@@ -224,7 +224,57 @@ public:
     int brightness = 255;
 
     MatrixDriver(ConfigReader &c)
-        : cfg(c), strip(c.stripLen, c.pin) {}
+        : cfg(c), strip(c.stripLen, c.pin), brightness(c.bootBri) {}
+
+    // Last frame, for GET /display/brightness (like WLED's info.leds).
+    uint8_t appliedBri = 0;       // after scale-bri and the current limiter
+    uint32_t estimatedMilliamps = 0;
+
+    // Auto brightness limiter using the same current model as WLED's
+    // (see BusDigital::estimateCurrent() / BusManager::applyABL() in
+    // github.com/wled/WLED, wled00/bus_manager.cpp). Independent
+    // implementation — no WLED code is included here.
+    // Estimates what the frame would draw at brightness `bri` and returns the
+    // brightness that keeps it inside hw.led.maxpwr. Model (as WLED):
+    //   current = colorSum * ledma / (3*255)  +  1 mA standby per LED
+    //   budget  = maxpwr - 120 mA for the ESP32 itself
+    // Only the colour part scales with brightness, so solve for that.
+    // It's an estimate, not a measurement — leave some margin.
+    uint8_t limitBrightness(const FrameBuffer &fb, uint8_t bri)
+    {
+        static const uint32_t kEspMilliamps = 120;
+        const uint32_t standby = cfg.stripLen; // ~1 mA per LED, even when black
+        uint64_t colorSum = 0;
+        for (const Rgba &c : fb.px)
+            colorSum += (uint32_t)c.r + c.g + c.b;
+        // mA of the colour part at full brightness (255)
+        uint32_t colorMa = (uint32_t)((colorSum * cfg.ledMilliamps) / (3 * 255));
+        uint32_t atBri = colorMa * bri / 255;
+        estimatedMilliamps = atBri + standby + kEspMilliamps;
+
+        if (cfg.maxMilliamps == 0 || cfg.ledMilliamps == 0)
+            return bri; // limiter off
+        uint32_t budget = cfg.maxMilliamps > kEspMilliamps ? cfg.maxMilliamps - kEspMilliamps : 0;
+        if (budget <= standby)
+        {
+            estimatedMilliamps = standby + kEspMilliamps;
+            return 1; // budget below standby draw: dim to the minimum (WLED does the same)
+        }
+        if (atBri + standby <= budget)
+            return bri;
+        uint32_t limited = (uint32_t)(((uint64_t)(budget - standby) * 255) / colorMa);
+        if (limited < 1) limited = 1;
+        if (limited > bri) limited = bri;
+        estimatedMilliamps = colorMa * limited / 255 + standby + kEspMilliamps;
+        return (uint8_t)limited;
+    }
+
+    // light.scale-bri, like WLED's scaledBri()
+    uint8_t scaledBri() const
+    {
+        uint32_t v = (uint32_t)brightness * cfg.briScalePct / 100;
+        return v > 255 ? 255 : (uint8_t)v;
+    }
 
     void debugPrintMatrix();
 
@@ -243,6 +293,7 @@ public:
     {
         if (fb.w != cfg.width || fb.h != cfg.height)
             return;
+        appliedBri = limitBrightness(fb, scaledBri());
         strip.clear();
         for (uint16_t y = 0; y < cfg.height; y++)
             for (uint16_t x = 0; x < cfg.width; x++)
@@ -327,9 +378,9 @@ public:
         int i = xyToIndex(x, y);
         if (i >= 0)
         {
-            r = (r * brightness) / 255;
-            g = (g * brightness) / 255;
-            b = (b * brightness) / 255;
+            r = (r * appliedBri) / 255;
+            g = (g * appliedBri) / 255;
+            b = (b * appliedBri) / 255;
             strip.setPixelColor(i, strip.Color(r, g, b));
         }
     }
@@ -398,6 +449,7 @@ public:
         }
 
         // clear your matrix
+        appliedBri = scaledBri();
         strip.clear();
 
         // Precompute ratios:

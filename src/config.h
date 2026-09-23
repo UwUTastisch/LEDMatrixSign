@@ -142,6 +142,18 @@ public:
     uint16_t width, height;
     std::vector<PanelConfig> panels;
 
+    // Brightness / power — same keys and meaning as WLED's cfg.json
+    // (github.com/wled/WLED, wled00/cfg.cpp):
+    //   hw.led.maxpwr        total current budget in mA (0 = limiter off)
+    //   hw.led.ins[0].maxpwr per-output budget, used when hw.led.maxpwr is 0
+    //   hw.led.ins[0].ledma  mA per LED at full white (WS2812B: 55)
+    //   light.scale-bri      brightness scale in percent (100 = unchanged)
+    //   def.bri              brightness after boot (0–255)
+    uint32_t maxMilliamps = 0;
+    uint8_t ledMilliamps = 55;
+    uint8_t briScalePct = 100;
+    uint8_t bootBri = 128;
+
     // Wi-Fi
     String wifiSsid;
     String wifiPassword;
@@ -254,6 +266,16 @@ private:
         pin = ins0["pin"][0].as<uint8_t>();
         order = ins0["order"].as<uint8_t>();
         reverse = ins0["rev"].as<bool>();
+
+        // — Power / brightness (WLED keys) —
+        uint32_t globalMa = hwLed["maxpwr"] | 0;
+        uint32_t outputMa = ins0["maxpwr"] | 0;
+        maxMilliamps = globalMa ? globalMa : outputMa;
+        ledMilliamps = ins0["ledma"] | 55;
+        briScalePct = doc["light"]["scale-bri"] | 100;
+        bootBri = doc["def"]["bri"] | 128;
+        Serial.printf("Power: maxpwr=%lumA ledma=%umA scale-bri=%u%% def.bri=%u\n",
+                      (unsigned long)maxMilliamps, ledMilliamps, briScalePct, bootBri);
 
         Serial.printf("LEDs: total=%d start=%d len=%d skip=%d pin=%d order=%d rev=%d\n",
                       totalLEDs, startLED, stripLen, skipLEDs, pin, order, reverse);
