@@ -13,6 +13,8 @@
 #include <ArduinoJson.h>
 #include <vector>
 #include <functional>
+#include <atomic>
+#include <esp_heap_caps.h>
 #include "base64.hpp"
 #include "../config.h"
 #include "../storage.h"
@@ -173,19 +175,70 @@ private:
             // "cbuf resize(): failed to allocate temporary buffer" long before
             // the frame is sent. With a filler, peak memory is the snapshot
             // plus one TCP buffer.
+            // The pixel buffer is malloc'ed, not a std::vector: vector::resize
+            // throws std::bad_alloc when the heap is short, and an uncaught
+            // exception is abort() + reboot. malloc just returns nullptr and
+            // the request gets a 503 instead.
+            struct Pixels
+            {
+                uint8_t *p = nullptr;
+                size_t n = 0;
+                Pixels() = default;
+                Pixels(const Pixels &) = delete;
+                Pixels &operator=(const Pixels &) = delete;
+                ~Pixels() { free(p); }
+                bool alloc(size_t len)
+                {
+                    p = (uint8_t *)malloc(len);
+                    n = p ? len : 0;
+                    return p != nullptr;
+                }
+                size_t size() const { return n; }
+                uint8_t &operator[](size_t i) { return p[i]; }
+            };
+            // Load shedding. Every snapshot holds ~18 KB until its ~25 KB
+            // response has been sent, which over the AP takes a while — a
+            // client polling in a tight loop (watch -n 0 curl …) stacks
+            // requests until the heap is empty and Wi-Fi itself can't
+            // allocate any more. So: at most kMaxInFlight snapshots at once,
+            // and only if the heap keeps kHeapReserve free afterwards for
+            // Wi-Fi / lwIP / AsyncTCP / LittleFS. Otherwise answer 503 right
+            // away, which costs almost nothing.
+            static std::atomic<int> inFlight{0};
+            static constexpr int kMaxInFlight = 2;
+            static constexpr size_t kHeapReserve = 32 * 1024;
+
             struct Shot
             {
                 int w = 0, h = 0;
                 String head;
-                std::vector<uint8_t> px; // BGRA, exactly as sent
+                Pixels px; // BGRA, exactly as sent
+                Shot() { inFlight++; }
+                // Runs when the response is done *or* the client vanished,
+                // since the filler lambda holding the last reference is
+                // destroyed with the response.
+                ~Shot() { inFlight--; }
             };
+
+            const size_t need = (size_t)factory.out.w * factory.out.h * 4;
+            if (inFlight.load() >= kMaxInFlight)
+            {
+                err(req, 503, "busy: another frame is still being sent, retry shortly");
+                return;
+            }
+            if (ESP.getFreeHeap() < need + kHeapReserve ||
+                heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < need)
+            {
+                err(req, 503, "low memory: frame snapshot refused, retry shortly");
+                return;
+            }
             auto shot = std::make_shared<Shot>();
             {
                 CompositorGuard g(factory.lock);
                 const FrameBuffer &fb = factory.out;
                 shot->w = fb.w;
                 shot->h = fb.h;
-                shot->px.resize((size_t)fb.w * fb.h * 4);
+                shot->px.alloc((size_t)fb.w * fb.h * 4);
                 if (shot->px.size() == (size_t)fb.w * fb.h * 4)
                     for (size_t i = 0; i < fb.px.size(); i++)
                     {
