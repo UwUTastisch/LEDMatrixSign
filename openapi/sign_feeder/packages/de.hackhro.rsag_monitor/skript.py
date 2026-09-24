@@ -35,5 +35,4 @@ def preload(ctx):
             f"scroll{i}": to_sign_text(dest),   # destination always scrolls
             f"dep{i}": to_sign_text(dep),
         })
-    print(params)
     return params
