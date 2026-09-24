@@ -15,10 +15,10 @@ import asyncio
 import os
 import time
 
-from openapi.sign_feeder.feeder import load_env
-from openapi.sign_feeder.feeder.packages import build_playlist, load_packages
-from openapi.sign_feeder.feeder.runner import Runner
-from openapi.sign_feeder.feeder.sign import Sign
+from feeder import load_env
+from feeder.packages import build_playlist, load_packages
+from feeder.runner import Runner
+from feeder.sign import Sign
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 

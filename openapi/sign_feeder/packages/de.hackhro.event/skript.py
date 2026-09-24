@@ -4,7 +4,7 @@ import datetime as dt
 import icalendar
 import recurring_ical_events
 
-from openapi.sign_feeder.feeder import to_sign_text
+from feeder import to_sign_text
 
 WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
 LOCAL_TZ = dt.datetime.now().astimezone().tzinfo

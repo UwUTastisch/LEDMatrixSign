@@ -11,7 +11,7 @@ ctx.http   shared requests.Session for your API calls
 ctx.sign   the sign: start_anim(name, params), brightness(v), post(path, json)
 ctx.log    log(message)
 """
-from openapi.sign_feeder.feeder import to_sign_text
+from feeder import to_sign_text
 
 
 def preload(ctx):

@@ -1,7 +1,7 @@
 """Live departures from abfahrten-rsag.de. One slide per station in .env."""
 from bs4 import BeautifulSoup
 
-from openapi.sign_feeder.feeder import to_sign_text
+from feeder import to_sign_text
 
 
 def kind(icon_classes):
@@ -35,4 +35,5 @@ def preload(ctx):
             f"scroll{i}": to_sign_text(dest),   # destination always scrolls
             f"dep{i}": to_sign_text(dep),
         })
+    print(params)
     return params
